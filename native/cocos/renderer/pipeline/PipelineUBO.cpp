@@ -83,11 +83,18 @@ void PipelineUBO::updateGlobalUBOView(const scene::Camera *camera, ccstd::array<
     
     auto *debugView = root->getDebugView();
     uboGlobalView[UBOGlobal::DEBUG_VIEW_MODE_OFFSET] = static_cast<float>(debugView->getSingleMode());
-    uboGlobalView[UBOGlobal::DEBUG_VIEW_MODE_OFFSET + 1] = debugView->isLightingWithAlbedo() ? 1.0F : 0.0F;
-    uboGlobalView[UBOGlobal::DEBUG_VIEW_MODE_OFFSET + 2] = debugView->isCsmLayerColoration() ? 1.0F : 0.0F;
-    for (int i = 0; i < static_cast<int>(pipeline::DebugViewCompositeType::MAX_BIT_COUNT); ++i) {
-        uboGlobalView[UBOGlobal::DEBUG_VIEW_COMPOSITE_PACK_1_OFFSET + i] = debugView->isCompositeModeEnabled(i) ? 1.0F : 0.0F;
+    
+    for (int i = 1; i <= 3; ++i) {
+        uboGlobalView[UBOGlobal::DEBUG_VIEW_MODE_OFFSET + i] = 0.0F;
     }
+    for (int i = 0; i < static_cast<int>(pipeline::DebugViewCompositeType::MAX_BIT_COUNT); ++i) {
+        int offset = i >> 3;
+        int bit = i % 8;
+        uboGlobalView[UBOGlobal::DEBUG_VIEW_MODE_OFFSET + 1 + offset] += (debugView->isCompositeModeEnabled(i) ? 1.0F : 0.0F) * pow(10.0F, static_cast<float>(bit));
+    }
+    
+    uboGlobalView[UBOGlobal::DEBUG_VIEW_MODE_OFFSET + 3] += (debugView->isLightingWithAlbedo() ? 1.0F : 0.0F) * pow(10.0F, 6.0F);
+    uboGlobalView[UBOGlobal::DEBUG_VIEW_MODE_OFFSET + 3] += (debugView->isCsmLayerColoration() ? 1.0F : 0.0F) * pow(10.0F, 7.0F);
 }
 
 void PipelineUBO::updateCameraUBOView(const RenderPipeline *pipeline, float *output, const scene::Camera *camera) {
@@ -111,7 +118,7 @@ void PipelineUBO::updateCameraUBOView(const RenderPipeline *pipeline, float *out
     output[UBOCamera::EXPOSURE_OFFSET + 0] = exposure;
     output[UBOCamera::EXPOSURE_OFFSET + 1] = 1.0F / exposure;
     output[UBOCamera::EXPOSURE_OFFSET + 2] = isHDR ? 1.0F : 0.0F;
-    output[UBOCamera::EXPOSURE_OFFSET + 3] = 0.0F;
+    output[UBOCamera::EXPOSURE_OFFSET + 3] = 1.0F / scene::Camera::getStandardExposureValue();
 
     if (mainLight) {
         const float shadowEnable = (mainLight->isShadowEnabled() && shadowInfo->getType() == scene::ShadowType::SHADOW_MAP) ? 1.0F : 0.0F;
@@ -249,7 +256,7 @@ void PipelineUBO::updateShadowUBOView(const RenderPipeline *pipeline, ccstd::arr
 
                     memcpy(sv.data() + UBOShadow::SHADOW_NEAR_FAR_LINEAR_SATURATION_INFO_OFFSET, &shadowNFLSInfos, sizeof(shadowNFLSInfos));
 
-                    const float shadowLPNNInfos[4] = {0.0F, packing, mainLight->getShadowNormalBias(), levelCount};
+                    const float shadowLPNNInfos[4] = {static_cast<float>(scene::LightType::DIRECTIONAL), packing, mainLight->getShadowNormalBias(), levelCount};
                     memcpy(sv.data() + UBOShadow::SHADOW_LIGHT_PACKING_NBIAS_NULL_INFO_OFFSET, &shadowLPNNInfos, sizeof(shadowLPNNInfos));
                 } else {
                     const auto layerThreshold = PipelineUBO::getPCFRadius(shadowInfo, mainLight);
@@ -285,7 +292,7 @@ void PipelineUBO::updateShadowUBOView(const RenderPipeline *pipeline, ccstd::arr
                     const float shadowNFLSInfos[4] = {0.1F, mainLight->getShadowDistance(), 0.0F, 1.0F - mainLight->getShadowSaturation()};
                     memcpy(sv.data() + UBOShadow::SHADOW_NEAR_FAR_LINEAR_SATURATION_INFO_OFFSET, &shadowNFLSInfos, sizeof(shadowNFLSInfos));
 
-                    const float shadowLPNNInfos[4] = {0.0F, packing, mainLight->getShadowNormalBias(), static_cast<float>(mainLight->getCSMLevel())};
+                    const float shadowLPNNInfos[4] = {static_cast<float>(scene::LightType::DIRECTIONAL), packing, mainLight->getShadowNormalBias(), static_cast<float>(mainLight->getCSMLevel())};
                     memcpy(sv.data() + UBOShadow::SHADOW_LIGHT_PACKING_NBIAS_NULL_INFO_OFFSET, &shadowLPNNInfos, sizeof(shadowLPNNInfos));
                 }
                 const float shadowWHPBInfos[4] = {shadowInfo->getSize().x, shadowInfo->getSize().y, static_cast<float>(mainLight->getShadowPcf()), mainLight->getShadowBias()};
@@ -335,7 +342,7 @@ void PipelineUBO::updateShadowUBOLightView(const RenderPipeline *pipeline, ccstd
                             farClamp = csmLayers->getSpecialLayer()->getShadowCameraFar();
                             levelCount = 1.0F;
                         }
-                        const float shadowLPNNInfos[4] = {0.0F, packing, mainLight->getShadowNormalBias(), 0.0F};
+                        const float shadowLPNNInfos[4] = {static_cast<float>(scene::LightType::DIRECTIONAL), packing, mainLight->getShadowNormalBias(), 0.0F};
                         memcpy(shadowUBO.data() + UBOShadow::SHADOW_LIGHT_PACKING_NBIAS_NULL_INFO_OFFSET, &shadowLPNNInfos, sizeof(shadowLPNNInfos));
                     } else {
                         const CSMLayerInfo *layer = csmLayers->getLayers()[level];
@@ -360,7 +367,7 @@ void PipelineUBO::updateShadowUBOLightView(const RenderPipeline *pipeline, ccstd
                     const float shadowNFLSInfos[4] = {nearClamp, farClamp, 0.0F, 1.0F - mainLight->getShadowSaturation()};
                     memcpy(shadowUBO.data() + UBOShadow::SHADOW_NEAR_FAR_LINEAR_SATURATION_INFO_OFFSET, &shadowNFLSInfos, sizeof(shadowNFLSInfos));
 
-                    const float shadowLPNNInfos[4] = {0.0F, packing, mainLight->getShadowNormalBias(), levelCount};
+                    const float shadowLPNNInfos[4] = {static_cast<float>(scene::LightType::DIRECTIONAL), packing, mainLight->getShadowNormalBias(), levelCount};
                     memcpy(shadowUBO.data() + UBOShadow::SHADOW_LIGHT_PACKING_NBIAS_NULL_INFO_OFFSET, &shadowLPNNInfos, sizeof(shadowLPNNInfos));
 
                     const float shadowWHPBInfos[4] = {shadowInfo->getSize().x, shadowInfo->getSize().y, static_cast<float>(mainLight->getShadowPcf()), mainLight->getShadowBias()};
@@ -383,7 +390,7 @@ void PipelineUBO::updateShadowUBOLightView(const RenderPipeline *pipeline, ccstd
                 const float shadowNFLSInfos[4] = {0.01F, spotLight->getRange(), 0.0F, 0.0F};
                 memcpy(shadowUBO.data() + UBOShadow::SHADOW_NEAR_FAR_LINEAR_SATURATION_INFO_OFFSET, &shadowNFLSInfos, sizeof(shadowNFLSInfos));
 
-                const float shadowLPNNInfos[4] = {1.0F, packing, spotLight->getShadowNormalBias(), 0.0F};
+                const float shadowLPNNInfos[4] = {static_cast<float>(scene::LightType::SPOT), packing, spotLight->getShadowNormalBias(), 0.0F};
                 memcpy(shadowUBO.data() + UBOShadow::SHADOW_LIGHT_PACKING_NBIAS_NULL_INFO_OFFSET, &shadowLPNNInfos, sizeof(shadowLPNNInfos));
 
                 const float shadowWHPBInfos[4] = {shadowInfo->getSize().x, shadowInfo->getSize().y, spotLight->getShadowPcf(), spotLight->getShadowBias()};

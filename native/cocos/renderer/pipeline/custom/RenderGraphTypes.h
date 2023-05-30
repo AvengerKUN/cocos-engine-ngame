@@ -88,6 +88,7 @@ struct RenderSwapchain {
     : swapchain(swapchainIn) {}
 
     gfx::Swapchain* swapchain{nullptr};
+    scene::RenderWindow* renderWindow{nullptr};
     uint32_t currentID{0};
     uint32_t numBackBuffers{0};
     uint32_t generation{0xFFFFFFFF};
@@ -121,31 +122,31 @@ struct ManagedResource {
     uint32_t unused{0};
 };
 
-struct RasterSubpass {
+struct Subpass {
     using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
     allocator_type get_allocator() const noexcept { // NOLINT
         return {rasterViews.get_allocator().resource()};
     }
 
-    RasterSubpass(const allocator_type& alloc) noexcept; // NOLINT
-    RasterSubpass(RasterSubpass&& rhs, const allocator_type& alloc);
-    RasterSubpass(RasterSubpass const& rhs, const allocator_type& alloc);
+    Subpass(const allocator_type& alloc) noexcept; // NOLINT
+    Subpass(Subpass&& rhs, const allocator_type& alloc);
+    Subpass(Subpass const& rhs, const allocator_type& alloc);
 
-    RasterSubpass(RasterSubpass&& rhs) noexcept = default;
-    RasterSubpass(RasterSubpass const& rhs) = delete;
-    RasterSubpass& operator=(RasterSubpass&& rhs) = default;
-    RasterSubpass& operator=(RasterSubpass const& rhs) = default;
+    Subpass(Subpass&& rhs) noexcept = default;
+    Subpass(Subpass const& rhs) = delete;
+    Subpass& operator=(Subpass&& rhs) = default;
+    Subpass& operator=(Subpass const& rhs) = default;
 
     PmrTransparentMap<ccstd::pmr::string, RasterView> rasterViews;
     PmrTransparentMap<ccstd::pmr::string, ccstd::pmr::vector<ComputeView>> computeViews;
 };
 
-inline bool operator==(const RasterSubpass& lhs, const RasterSubpass& rhs) noexcept {
+inline bool operator==(const Subpass& lhs, const Subpass& rhs) noexcept {
     return std::forward_as_tuple(lhs.rasterViews, lhs.computeViews) ==
            std::forward_as_tuple(rhs.rasterViews, rhs.computeViews);
 }
 
-inline bool operator!=(const RasterSubpass& lhs, const RasterSubpass& rhs) noexcept {
+inline bool operator!=(const Subpass& lhs, const Subpass& rhs) noexcept {
     return !(lhs == rhs);
 }
 
@@ -259,16 +260,14 @@ struct SubpassGraph {
         ccstd::pmr::vector<InEdge> inEdges;
     };
 
-    struct NameTag {
-    } static constexpr Name{}; // NOLINT
-    struct SubpassTag {
-    } static constexpr Subpass{}; // NOLINT
+    struct NameTag {};
+    struct SubpassTag {};
 
     // Vertices
     ccstd::pmr::vector<Vertex> _vertices;
     // Components
     ccstd::pmr::vector<ccstd::pmr::string> names;
-    ccstd::pmr::vector<RasterSubpass> subpasses;
+    ccstd::pmr::vector<Subpass> subpasses;
 };
 
 inline bool operator==(const SubpassGraph& lhs, const SubpassGraph& rhs) noexcept {
@@ -279,6 +278,51 @@ inline bool operator==(const SubpassGraph& lhs, const SubpassGraph& rhs) noexcep
 inline bool operator!=(const SubpassGraph& lhs, const SubpassGraph& rhs) noexcept {
     return !(lhs == rhs);
 }
+
+struct RasterSubpass {
+    using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
+    allocator_type get_allocator() const noexcept { // NOLINT
+        return {rasterViews.get_allocator().resource()};
+    }
+
+    RasterSubpass(uint32_t subpassIDIn, uint32_t countIn, uint32_t qualityIn, const allocator_type& alloc) noexcept;
+    RasterSubpass(RasterSubpass&& rhs, const allocator_type& alloc);
+    RasterSubpass(RasterSubpass const& rhs, const allocator_type& alloc);
+
+    RasterSubpass(RasterSubpass&& rhs) noexcept = default;
+    RasterSubpass(RasterSubpass const& rhs) = delete;
+    RasterSubpass& operator=(RasterSubpass&& rhs) = default;
+    RasterSubpass& operator=(RasterSubpass const& rhs) = default;
+
+    PmrTransparentMap<ccstd::pmr::string, RasterView> rasterViews;
+    PmrTransparentMap<ccstd::pmr::string, ccstd::pmr::vector<ComputeView>> computeViews;
+    ccstd::pmr::vector<ResolvePair> resolvePairs;
+    gfx::Viewport viewport;
+    uint32_t subpassID{0xFFFFFFFF};
+    uint32_t count{1};
+    uint32_t quality{0};
+    bool showStatistics{false};
+};
+
+struct ComputeSubpass {
+    using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
+    allocator_type get_allocator() const noexcept { // NOLINT
+        return {rasterViews.get_allocator().resource()};
+    }
+
+    ComputeSubpass(uint32_t subpassIDIn, const allocator_type& alloc) noexcept;
+    ComputeSubpass(ComputeSubpass&& rhs, const allocator_type& alloc);
+    ComputeSubpass(ComputeSubpass const& rhs, const allocator_type& alloc);
+
+    ComputeSubpass(ComputeSubpass&& rhs) noexcept = default;
+    ComputeSubpass(ComputeSubpass const& rhs) = delete;
+    ComputeSubpass& operator=(ComputeSubpass&& rhs) = default;
+    ComputeSubpass& operator=(ComputeSubpass const& rhs) = default;
+
+    PmrTransparentMap<ccstd::pmr::string, RasterView> rasterViews;
+    PmrTransparentMap<ccstd::pmr::string, ccstd::pmr::vector<ComputeView>> computeViews;
+    uint32_t subpassID{0xFFFFFFFF};
+};
 
 struct RasterPass {
     using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
@@ -297,18 +341,22 @@ struct RasterPass {
 
     PmrTransparentMap<ccstd::pmr::string, RasterView> rasterViews;
     PmrTransparentMap<ccstd::pmr::string, ccstd::pmr::vector<ComputeView>> computeViews;
+    PmrTransparentMap<ccstd::pmr::string, uint32_t> attachmentIndexMap;
     SubpassGraph subpassGraph;
     uint32_t width{0};
     uint32_t height{0};
+    uint32_t count{1};
+    uint32_t quality{0};
     gfx::Viewport viewport;
     ccstd::pmr::string versionName;
     uint64_t version{0};
+    uint64_t hashValue{0};
     bool showStatistics{false};
 };
 
 inline bool operator==(const RasterPass& lhs, const RasterPass& rhs) noexcept {
-    return std::forward_as_tuple(lhs.rasterViews, lhs.computeViews, lhs.subpassGraph, lhs.width, lhs.height) ==
-           std::forward_as_tuple(rhs.rasterViews, rhs.computeViews, rhs.subpassGraph, rhs.width, rhs.height);
+    return std::forward_as_tuple(lhs.rasterViews, lhs.computeViews, lhs.subpassGraph, lhs.width, lhs.height, lhs.count, lhs.quality) ==
+           std::forward_as_tuple(rhs.rasterViews, rhs.computeViews, rhs.subpassGraph, rhs.width, rhs.height, rhs.count, rhs.quality);
 }
 
 inline bool operator!=(const RasterPass& lhs, const RasterPass& rhs) noexcept {
@@ -447,7 +495,9 @@ struct ResourceGraph {
     void validateSwapchains();
     void mount(gfx::Device* device, vertex_descriptor vertID);
     void unmount(uint64_t completedFenceValue);
+    bool isTexture(vertex_descriptor resID) const noexcept;
     gfx::Texture* getTexture(vertex_descriptor resID);
+    gfx::Buffer* getBuffer(vertex_descriptor resID);
     void invalidatePersistentRenderPassAndFramebuffer(gfx::Texture* pTexture);
 
     // ContinuousContainer
@@ -474,16 +524,11 @@ struct ResourceGraph {
         VertexHandle handle;
     };
 
-    struct NameTag {
-    } static constexpr Name{}; // NOLINT
-    struct DescTag {
-    } static constexpr Desc{}; // NOLINT
-    struct TraitsTag {
-    } static constexpr Traits{}; // NOLINT
-    struct StatesTag {
-    } static constexpr States{}; // NOLINT
-    struct SamplerTag {
-    } static constexpr Sampler{}; // NOLINT
+    struct NameTag {};
+    struct DescTag {};
+    struct TraitsTag {};
+    struct StatesTag {};
+    struct SamplerTag {};
 
     // Vertices
     ccstd::pmr::vector<Vertex> _vertices;
@@ -527,6 +572,24 @@ struct ComputePass {
     PmrTransparentMap<ccstd::pmr::string, ccstd::pmr::vector<ComputeView>> computeViews;
 };
 
+struct ResolvePass {
+    using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
+    allocator_type get_allocator() const noexcept { // NOLINT
+        return {resolvePairs.get_allocator().resource()};
+    }
+
+    ResolvePass(const allocator_type& alloc) noexcept; // NOLINT
+    ResolvePass(ResolvePass&& rhs, const allocator_type& alloc);
+    ResolvePass(ResolvePass const& rhs, const allocator_type& alloc);
+
+    ResolvePass(ResolvePass&& rhs) noexcept = default;
+    ResolvePass(ResolvePass const& rhs) = delete;
+    ResolvePass& operator=(ResolvePass&& rhs) = default;
+    ResolvePass& operator=(ResolvePass const& rhs) = default;
+
+    ccstd::pmr::vector<ResolvePair> resolvePairs;
+};
+
 struct CopyPass {
     using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
     allocator_type get_allocator() const noexcept { // NOLINT
@@ -535,14 +598,14 @@ struct CopyPass {
 
     CopyPass(const allocator_type& alloc) noexcept; // NOLINT
     CopyPass(CopyPass&& rhs, const allocator_type& alloc);
-    CopyPass(CopyPass const& rhs, const allocator_type& alloc);
 
     CopyPass(CopyPass&& rhs) noexcept = default;
     CopyPass(CopyPass const& rhs) = delete;
     CopyPass& operator=(CopyPass&& rhs) = default;
-    CopyPass& operator=(CopyPass const& rhs) = default;
+    CopyPass& operator=(CopyPass const& rhs) = delete;
 
     ccstd::pmr::vector<CopyPair> copyPairs;
+    ccstd::pmr::vector<UploadPair> uploadPairs;
 };
 
 struct MovePass {
@@ -585,7 +648,6 @@ struct QueueTag {};
 struct SceneTag {};
 struct DispatchTag {};
 struct BlitTag {};
-struct PresentTag {};
 struct ClearTag {};
 struct ViewportTag {};
 
@@ -612,10 +674,15 @@ struct ClearView {
 
 struct RenderQueue {
     RenderQueue() = default;
-    RenderQueue(QueueHint hintIn) noexcept // NOLINT
-    : hint(hintIn) {}
+    RenderQueue(QueueHint hintIn, uint32_t phaseIDIn) noexcept
+    : hint(hintIn),
+      phaseID(phaseIDIn) {}
+    RenderQueue(uint32_t phaseIDIn) noexcept // NOLINT
+    : phaseID(phaseIDIn) {}
 
     QueueHint hint{QueueHint::RENDER_OPAQUE};
+    uint32_t phaseID{0xFFFFFFFF};
+    gfx::Viewport viewport;
 };
 
 struct SceneData {
@@ -638,26 +705,20 @@ struct SceneData {
     scene::Camera* camera{nullptr};
     LightInfo light;
     SceneFlags flags{SceneFlags::NONE};
-    ccstd::pmr::vector<ccstd::pmr::string> scenes;
+    ccstd::pmr::vector<const scene::RenderScene*> scenes;
 };
 
 struct Dispatch {
-    using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
-    allocator_type get_allocator() const noexcept { // NOLINT
-        return {shader.get_allocator().resource()};
-    }
+    Dispatch() = default;
+    Dispatch(IntrusivePtr<Material> materialIn, uint32_t passIDIn, uint32_t threadGroupCountXIn, uint32_t threadGroupCountYIn, uint32_t threadGroupCountZIn) noexcept // NOLINT
+    : material(std::move(materialIn)),
+      passID(passIDIn),
+      threadGroupCountX(threadGroupCountXIn),
+      threadGroupCountY(threadGroupCountYIn),
+      threadGroupCountZ(threadGroupCountZIn) {}
 
-    Dispatch(const allocator_type& alloc) noexcept; // NOLINT
-    Dispatch(ccstd::pmr::string shaderIn, uint32_t threadGroupCountXIn, uint32_t threadGroupCountYIn, uint32_t threadGroupCountZIn, const allocator_type& alloc) noexcept;
-    Dispatch(Dispatch&& rhs, const allocator_type& alloc);
-    Dispatch(Dispatch const& rhs, const allocator_type& alloc);
-
-    Dispatch(Dispatch&& rhs) noexcept = default;
-    Dispatch(Dispatch const& rhs) = delete;
-    Dispatch& operator=(Dispatch&& rhs) = default;
-    Dispatch& operator=(Dispatch const& rhs) = default;
-
-    ccstd::pmr::string shader;
+    IntrusivePtr<Material> material;
+    uint32_t passID{0};
     uint32_t threadGroupCountX{0};
     uint32_t threadGroupCountY{0};
     uint32_t threadGroupCountZ{0};
@@ -675,34 +736,6 @@ struct Blit {
     uint32_t passID{0};
     SceneFlags sceneFlags{SceneFlags::NONE};
     scene::Camera* camera{nullptr};
-};
-
-struct Present {
-    Present() = default;
-    Present(uint32_t syncIntervalIn, uint32_t flagsIn) noexcept // NOLINT
-    : syncInterval(syncIntervalIn),
-      flags(flagsIn) {}
-
-    uint32_t syncInterval{0};
-    uint32_t flags{0};
-};
-
-struct PresentPass {
-    using allocator_type = boost::container::pmr::polymorphic_allocator<char>;
-    allocator_type get_allocator() const noexcept { // NOLINT
-        return {presents.get_allocator().resource()};
-    }
-
-    PresentPass(const allocator_type& alloc) noexcept; // NOLINT
-    PresentPass(PresentPass&& rhs, const allocator_type& alloc);
-    PresentPass(PresentPass const& rhs, const allocator_type& alloc);
-
-    PresentPass(PresentPass&& rhs) noexcept = default;
-    PresentPass(PresentPass const& rhs) = delete;
-    PresentPass& operator=(PresentPass&& rhs) = default;
-    PresentPass& operator=(PresentPass const& rhs) = default;
-
-    PmrTransparentMap<ccstd::pmr::string, Present> presents;
 };
 
 struct RenderData {
@@ -723,6 +756,7 @@ struct RenderData {
     PmrUnorderedMap<uint32_t, IntrusivePtr<gfx::Buffer>> buffers;
     PmrUnorderedMap<uint32_t, IntrusivePtr<gfx::Texture>> textures;
     PmrUnorderedMap<uint32_t, ObserverPtr<gfx::Sampler>> samplers;
+    ccstd::pmr::string custom;
 };
 
 struct RenderGraph {
@@ -844,15 +878,17 @@ struct RenderGraph {
     }
 
     // PolymorphicGraph
-    using VertexTag         = ccstd::variant<RasterTag, ComputeTag, CopyTag, MoveTag, PresentTag, RaytraceTag, QueueTag, SceneTag, BlitTag, DispatchTag, ClearTag, ViewportTag>;
-    using VertexValue       = ccstd::variant<RasterPass*, ComputePass*, CopyPass*, MovePass*, PresentPass*, RaytracePass*, RenderQueue*, SceneData*, Blit*, Dispatch*, ccstd::pmr::vector<ClearView>*, gfx::Viewport*>;
-    using VertexConstValue = ccstd::variant<const RasterPass*, const ComputePass*, const CopyPass*, const MovePass*, const PresentPass*, const RaytracePass*, const RenderQueue*, const SceneData*, const Blit*, const Dispatch*, const ccstd::pmr::vector<ClearView>*, const gfx::Viewport*>;
+    using VertexTag         = ccstd::variant<RasterPassTag, RasterSubpassTag, ComputeSubpassTag, ComputeTag, ResolveTag, CopyTag, MoveTag, RaytraceTag, QueueTag, SceneTag, BlitTag, DispatchTag, ClearTag, ViewportTag>;
+    using VertexValue       = ccstd::variant<RasterPass*, RasterSubpass*, ComputeSubpass*, ComputePass*, ResolvePass*, CopyPass*, MovePass*, RaytracePass*, RenderQueue*, SceneData*, Blit*, Dispatch*, ccstd::pmr::vector<ClearView>*, gfx::Viewport*>;
+    using VertexConstValue = ccstd::variant<const RasterPass*, const RasterSubpass*, const ComputeSubpass*, const ComputePass*, const ResolvePass*, const CopyPass*, const MovePass*, const RaytracePass*, const RenderQueue*, const SceneData*, const Blit*, const Dispatch*, const ccstd::pmr::vector<ClearView>*, const gfx::Viewport*>;
     using VertexHandle      = ccstd::variant<
-        impl::ValueHandle<RasterTag, vertex_descriptor>,
+        impl::ValueHandle<RasterPassTag, vertex_descriptor>,
+        impl::ValueHandle<RasterSubpassTag, vertex_descriptor>,
+        impl::ValueHandle<ComputeSubpassTag, vertex_descriptor>,
         impl::ValueHandle<ComputeTag, vertex_descriptor>,
+        impl::ValueHandle<ResolveTag, vertex_descriptor>,
         impl::ValueHandle<CopyTag, vertex_descriptor>,
         impl::ValueHandle<MoveTag, vertex_descriptor>,
-        impl::ValueHandle<PresentTag, vertex_descriptor>,
         impl::ValueHandle<RaytraceTag, vertex_descriptor>,
         impl::ValueHandle<QueueTag, vertex_descriptor>,
         impl::ValueHandle<SceneTag, vertex_descriptor>,
@@ -906,14 +942,10 @@ struct RenderGraph {
         VertexHandle handle;
     };
 
-    struct NameTag {
-    } static constexpr Name{}; // NOLINT
-    struct LayoutTag {
-    } static constexpr Layout{}; // NOLINT
-    struct DataTag {
-    } static constexpr Data{}; // NOLINT
-    struct ValidTag {
-    } static constexpr Valid{}; // NOLINT
+    struct NameTag {};
+    struct LayoutTag {};
+    struct DataTag {};
+    struct ValidTag {};
 
     // Owners
     ccstd::pmr::vector<Object> objects;
@@ -926,10 +958,12 @@ struct RenderGraph {
     ccstd::pmr::vector<bool> valid;
     // PolymorphicGraph
     ccstd::pmr::vector<RasterPass> rasterPasses;
+    ccstd::pmr::vector<RasterSubpass> rasterSubpasses;
+    ccstd::pmr::vector<ComputeSubpass> computeSubpasses;
     ccstd::pmr::vector<ComputePass> computePasses;
+    ccstd::pmr::vector<ResolvePass> resolvePasses;
     ccstd::pmr::vector<CopyPass> copyPasses;
     ccstd::pmr::vector<MovePass> movePasses;
-    ccstd::pmr::vector<PresentPass> presentPasses;
     ccstd::pmr::vector<RaytracePass> raytracePasses;
     ccstd::pmr::vector<RenderQueue> renderQueues;
     ccstd::pmr::vector<SceneData> scenes;
@@ -947,7 +981,7 @@ struct RenderGraph {
 
 namespace ccstd {
 
-inline hash_t hash<cc::render::RasterSubpass>::operator()(const cc::render::RasterSubpass& val) const noexcept {
+inline hash_t hash<cc::render::Subpass>::operator()(const cc::render::Subpass& val) const noexcept {
     hash_t seed = 0;
     hash_combine(seed, val.rasterViews);
     hash_combine(seed, val.computeViews);
@@ -968,6 +1002,8 @@ inline hash_t hash<cc::render::RasterPass>::operator()(const cc::render::RasterP
     hash_combine(seed, val.subpassGraph);
     hash_combine(seed, val.width);
     hash_combine(seed, val.height);
+    hash_combine(seed, val.count);
+    hash_combine(seed, val.quality);
     return seed;
 }
 

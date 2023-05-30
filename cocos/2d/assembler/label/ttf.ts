@@ -48,6 +48,9 @@ export const ttf: IAssembler = {
         renderData.dataLength = 4;
         renderData.resize(4, 6);
 
+        // hard code
+        comp.textRenderData.quadCount = 4;
+
         const vData = renderData.chunk.vb;
 
         vData[3] = vData[21] = vData[22] = vData[31] = 0;
@@ -81,7 +84,7 @@ export const ttf: IAssembler = {
             const x = curData.x;
             const y = curData.y;
             let rhw = m.m03 * x + m.m07 * y + m.m15;
-            rhw = rhw ? Math.abs(1 / rhw) : 1;
+            rhw = rhw ? 1 / rhw : 1;
 
             offset = i * stride;
             vData[offset + 0] = (m.m00 * x + m.m04 * y + m.m12) * rhw;

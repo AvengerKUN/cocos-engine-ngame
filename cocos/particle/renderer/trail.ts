@@ -27,7 +27,7 @@ import { Material } from '../../asset/assets/material';
 import { RenderingSubMesh } from '../../asset/assets/rendering-sub-mesh';
 import { director } from '../../game/director';
 import { AttributeName, BufferUsageBit, Format, FormatInfos, MemoryUsageBit, PrimitiveMode,
-    Device, Attribute, Buffer, IndirectBuffer, BufferInfo, DrawInfo, DRAW_INFO_SIZE } from '../../gfx';
+    Device, Attribute, Buffer, BufferInfo, DrawInfo, DRAW_INFO_SIZE } from '../../gfx';
 import { Color, Mat4, Quat, toRadian, Vec3, Pool, warnID, cclegacy } from '../../core';
 import { scene } from '../../render-scene';
 import CurveRange from '../animator/curve-range';
@@ -42,7 +42,6 @@ const DIRECTION_THRESHOLD = Math.cos(toRadian(100));
 
 const _temp_trailEle = { position: new Vec3(), velocity: new Vec3() } as ITrailElement;
 const _temp_quat = new Quat();
-const _temp_xform = new Mat4();
 const _temp_vec3 = new Vec3();
 const _temp_vec3_1 = new Vec3();
 const _temp_color = new Color();
@@ -326,8 +325,6 @@ export default class TrailModule {
     private _trailSegments: Pool<TrailSegment> | null = null;
     private _particleTrail: Map<Particle, TrailSegment>;
     private _trailModel: scene.Model | null = null;
-    private _iaInfo: IndirectBuffer;
-    private _iaInfoBuffer: Buffer | null = null;
     private _subMeshData: RenderingSubMesh | null = null;
     private _vertAttrs: Attribute[];
     private _vbF32: Float32Array | null = null;
@@ -335,11 +332,18 @@ export default class TrailModule {
     private _iBuffer: Uint16Array | null = null;
     private _needTransform = false;
     private _material: Material | null = null;
+    private _psTransform = new Mat4();
+    private _iaVertCount = 0;
+    private _iaIndexCount = 0;
+    /**
+     * @engineInternal
+     */
+    public get inited () {
+        return this._inited;
+    }
     private _inited: boolean;
 
     constructor () {
-        this._iaInfo = new IndirectBuffer([new DrawInfo()]);
-
         this._vertAttrs = [
             new Attribute(AttributeName.ATTR_POSITION, Format.RGB32F),   // xyz:position
             new Attribute(AttributeName.ATTR_TEX_COORD, Format.RGBA32F), // x:index y:size zw:texcoord
@@ -454,7 +458,7 @@ export default class TrailModule {
         this._trailLifetime = this.lifeTime.evaluate(this._particleSystem._time, 1)!;
         if (this.space === Space.World && this._particleSystem._simulationSpace === Space.Local) {
             this._needTransform = true;
-            this._particleSystem.node.getWorldMatrix(_temp_xform);
+            this._particleSystem.node.getWorldMatrix(this._psTransform);
             this._particleSystem.node.getWorldRotation(_temp_quat);
         } else {
             this._needTransform = false;
@@ -485,7 +489,7 @@ export default class TrailModule {
         }
         let lastSeg = trail.getElement(trail.end - 1);
         if (this._needTransform) {
-            Vec3.transformMat4(_temp_vec3, p.position, _temp_xform);
+            Vec3.transformMat4(_temp_vec3, p.position, this._psTransform);
         } else {
             Vec3.copy(_temp_vec3, p.position);
         }
@@ -562,7 +566,7 @@ export default class TrailModule {
                     indexOffset, 1 - j * textCoordSeg, j, PRE_TRIANGLE_INDEX | NEXT_TRIANGLE_INDEX);
             }
             if (this._needTransform) {
-                Vec3.transformMat4(_temp_trailEle.position, p.position, _temp_xform);
+                Vec3.transformMat4(_temp_trailEle.position, p.position, this._psTransform);
             } else {
                 Vec3.copy(_temp_trailEle.position, p.position);
             }
@@ -628,9 +632,9 @@ export default class TrailModule {
             const subModel = subModels[0];
             subModel.inputAssembler.vertexBuffers[0].update(this._vbF32!);
             subModel.inputAssembler.indexBuffer!.update(this._iBuffer!);
-            this._iaInfo.drawInfos[0].firstIndex = 0;
-            this._iaInfo.drawInfos[0].indexCount = count;
-            this._iaInfoBuffer!.update(this._iaInfo);
+            subModel.inputAssembler.firstIndex = 0;
+            subModel.inputAssembler.indexCount = count;
+            subModel.inputAssembler.vertexCount = this._iaVertCount;
         }
     }
 
@@ -668,17 +672,10 @@ export default class TrailModule {
         this._iBuffer = new Uint16Array(Math.max(1, this._trailNum) * 6);
         indexBuffer.update(this._iBuffer);
 
-        this._iaInfoBuffer = device.createBuffer(new BufferInfo(
-            BufferUsageBit.INDIRECT,
-            MemoryUsageBit.HOST | MemoryUsageBit.DEVICE,
-            DRAW_INFO_SIZE,
-            DRAW_INFO_SIZE,
-        ));
-        this._iaInfo.drawInfos[0].vertexCount = (this._trailNum + 1) * 2;
-        this._iaInfo.drawInfos[0].indexCount = this._trailNum * 6;
-        this._iaInfoBuffer.update(this._iaInfo);
+        this._iaVertCount = (this._trailNum + 1) * 2;
+        this._iaIndexCount = this._trailNum * 6;
 
-        this._subMeshData = new RenderingSubMesh([vertexBuffer], this._vertAttrs, PrimitiveMode.TRIANGLE_LIST, indexBuffer, this._iaInfoBuffer);
+        this._subMeshData = new RenderingSubMesh([vertexBuffer], this._vertAttrs, PrimitiveMode.TRIANGLE_LIST, indexBuffer);
 
         const trailModel = this._trailModel;
         if (trailModel && this._material) {

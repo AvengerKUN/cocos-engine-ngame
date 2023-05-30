@@ -285,6 +285,7 @@ const ccstd::unordered_map<ccstd::string, uint32_t> DEFAULT_UNIFORM_COUNTS{
     {"cc_lightColor", pipeline::UBOForwardLight::LIGHTS_PER_PASS},
     {"cc_lightSizeRangeAngle", pipeline::UBOForwardLight::LIGHTS_PER_PASS},
     {"cc_lightDir", pipeline::UBOForwardLight::LIGHTS_PER_PASS},
+    {"cc_lightBoundingSizeVS", pipeline::UBOForwardLight::LIGHTS_PER_PASS},
 };
 
 const TransparentSet<ccstd::string> DYNAMIC_UNIFORM_BLOCK{
@@ -326,7 +327,7 @@ bool isDynamicUniformBlock(std::string_view name) {
 gfx::DescriptorSet* getOrCreatePerPassDescriptorSet(
     gfx::Device* device,
     LayoutGraphData& lg, LayoutGraphData::vertex_descriptor vertID) {
-    auto& ppl = get(LayoutGraphData::Layout, lg, vertID);
+    auto& ppl = get(LayoutGraphData::LayoutTag{}, lg, vertID);
     auto iter = ppl.descriptorSets.find(UpdateFrequency::PER_PASS);
     if (iter == ppl.descriptorSets.end()) {
         return nullptr;
@@ -430,7 +431,7 @@ void printLayoutGraphData(
         if (parent(v, lg) != LayoutGraphData::null_vertex()) {
             continue;
         }
-        const auto& name = get(LayoutGraphData::Name, lg, v);
+        const auto& name = get(LayoutGraphData::NameTag{}, lg, v);
         OSS << "\"" << name << "\": ";
 
         visit(
@@ -441,7 +442,7 @@ void printLayoutGraphData(
 
         oss << " {\n";
         INDENT_BEG();
-        const auto& info = get(LayoutGraphData::Layout, lg, v);
+        const auto& info = get(LayoutGraphData::LayoutTag{}, lg, v);
         for (const auto& set : info.descriptorSets) {
             OSS << "Set<" << getName(set.first) << "> {\n";
             {

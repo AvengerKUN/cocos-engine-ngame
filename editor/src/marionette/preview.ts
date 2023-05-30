@@ -1,23 +1,30 @@
 import { Node } from '../../../cocos/scene-graph';
 import { Motion, MotionEval, MotionPort } from '../../../cocos/animation/marionette/motion';
 import { createEval } from '../../../cocos/animation/marionette/create-eval';
-import { VarInstance, Value, VariableType } from '../../../cocos/animation/marionette/variable';
+import { VarInstance, Value, VariableType, VariableDescription, createInstanceTag } from '../../../cocos/animation/marionette/variable';
 import { assertIsNonNullable } from '../../../cocos/core/data/utils/asserts';
 import {
     AnimationBlendEval,
-} from '../../../cocos/animation/marionette/animation-blend';
+} from '../../../cocos/animation/marionette/motion/animation-blend';
 import type { RuntimeID } from '../../../cocos/animation/marionette/graph-debug';
 import {
-    AnimationGraphBindingContext, AnimationGraphEvaluationContext, AnimationGraphPoseLayoutMaintainer, defaultTransformsTag, MetaValueRegistry,
+    AnimationGraphBindingContext, AnimationGraphEvaluationContext,
+    AnimationGraphPoseLayoutMaintainer, defaultTransformsTag, AuxiliaryCurveRegistry,
 } from '../../../cocos/animation/marionette/animation-graph-context';
 import { blendPoseInto, Pose } from '../../../cocos/animation/core/pose';
+import { AnimationController } from '../../../cocos/animation/marionette/animation-controller';
+import { EventTarget } from '../../../exports/base';
 
 class AnimationGraphPartialPreviewer {
     constructor(root: Node) {
         this._root = root;
+
+        const dummyAnimationControllerNode = new Node();
+        this._dummyAnimationController = dummyAnimationControllerNode.addComponent(AnimationController);
     }
 
     public destroy() {
+        this._dummyAnimationController.node.destroy();
     }
 
     public evaluate() {
@@ -27,12 +34,12 @@ class AnimationGraphPartialPreviewer {
         evaluationContext.popPose();
     }
 
-    public addVariable(id: string, type: VariableType, value: Value) {
+    public addVariable(id: string, description: VariableDescription) {
         const { _varInstances: varInstances } = this;
         if (id in varInstances) {
             return;
         }
-        varInstances[id] = new VarInstance(type, value);
+        varInstances[id] = description[createInstanceTag]();
     }
 
     public removeVariable(id: string) {
@@ -58,9 +65,9 @@ class AnimationGraphPartialPreviewer {
         return null;
     }
 
-    private _poseLayoutMaintainer: AnimationGraphPoseLayoutMaintainer;
-
-    private _evaluationContext: AnimationGraphEvaluationContext;
+    // NOTE: these two properties rely on lazy initialization.
+    private _poseLayoutMaintainer!: AnimationGraphPoseLayoutMaintainer;
+    private _evaluationContext!: AnimationGraphEvaluationContext;
 
     private _varInstances: Record<string, VarInstance> = {};
 
@@ -68,11 +75,16 @@ class AnimationGraphPartialPreviewer {
 
     private _motionRecords: MotionEvalRecord[] = [];
 
+    private _dummyAnimationController: AnimationController;
+
     private _updateAllRecords() {
-        const poseLayoutMaintainer = new AnimationGraphPoseLayoutMaintainer(new MetaValueRegistry());
+        const poseLayoutMaintainer = new AnimationGraphPoseLayoutMaintainer(this._root, new AuxiliaryCurveRegistry());
         this._poseLayoutMaintainer = poseLayoutMaintainer;
 
-        const bindingContext = new AnimationGraphBindingContext(this._root, this._poseLayoutMaintainer, this._varInstances);
+        const bindingContext = new AnimationGraphBindingContext(
+            this._root, this._poseLayoutMaintainer, this._varInstances, this._dummyAnimationController,
+            new EventTarget(),
+        );
 
         poseLayoutMaintainer.startBind();
 
@@ -82,10 +94,7 @@ class AnimationGraphPartialPreviewer {
 
         poseLayoutMaintainer.endBind();
 
-        const evaluationContext = new AnimationGraphEvaluationContext({
-            transformCount: poseLayoutMaintainer.transformCount,
-            metaValueCount: poseLayoutMaintainer.metaValueCount,
-        });
+        const evaluationContext = poseLayoutMaintainer.createEvaluationContext();
 
         poseLayoutMaintainer.fetchDefaultTransforms(evaluationContext[defaultTransformsTag]);
 
@@ -419,10 +428,7 @@ class MotionEvalRecord {
     }
 
     public rebind(bindContext: AnimationGraphBindingContext) {
-        const motionEval = this._motion[createEval]({
-            additive: false,
-            up: bindContext,
-        }, null);
+        const motionEval = this._motion[createEval](bindContext, null, true);
 
         if (!motionEval) {
             return;

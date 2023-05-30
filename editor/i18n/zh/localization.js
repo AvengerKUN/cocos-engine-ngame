@@ -1,11 +1,57 @@
+/* eslint-disable quote-props */
 const pkg = require('../../../package.json');
+const { mixin, link } = require('../../i18n-utils');
 const version = pkg.version.replace(/(^\d+\.\d+)\..*$/, (str, a) => {
     return a;
 });
 
 const url = 'https://docs.cocos.com/creator';
 
-module.exports = {
+module.exports = link(mixin({
+
+    classes: {
+        'cc': {
+            'animation': {
+                'TCVariableBinding': {
+                    menu: '变量绑定',
+                    tooltip: '使用变量的值作为条件值。',
+                    properties: {
+                        'variableName': {
+                            label: '变量',
+                            tooltip: '变量名称。',
+                        },
+                    },
+                },
+                'TCAuxiliaryCurveBinding': {
+                    menu: '曲线值绑定',
+                    tooltip: '使用辅助曲线当前的值作为条件值。',
+                    properties: {
+                        'curveName': {
+                            label: '曲线',
+                            tooltip: '辅助曲线名称。',
+                        },
+                    },
+                },
+                'TCStateWeightBinding': {
+                    menu: '状态权重绑定',
+                    tooltip: '使用状态的权重作为条件值。',
+                    abbr: {
+                        label: '状态权重',
+                        tooltip: '过渡源状态的当前权重。',
+                    },
+                },
+                'TCStateMotionTimeBinding': {
+                    menu: '动画流逝时间绑定',
+                    tooltip: '使用状态中动画的（标准化的）流逝时间作为条件值。',
+                    abbr: {
+                        label: '动画流逝时间',
+                        tooltip: '过渡源状态中，动画的（标准化的）流逝时间。',
+                    },
+                },
+            },
+        },
+    },
+
     help: {
         cc: {
             Node: `${url}/${version}/manual/zh/concepts/scene/node-component.html`,
@@ -58,23 +104,76 @@ module.exports = {
             RigidBody2D: `${url}/${version}/manual/zh/physics-2d/physics-2d-rigid-body.html`,
             Joint2D: `${url}/${version}/manual/zh/physics-2d/physics-2d-joint.html`,
             BoxCollider: `${url}/${version}/manual/zh/physics/physics-collider.html`,
-            SphereCollider: `${url}/${version}/manual/zh/physics/physics-component.html`,
-            CapsuleCollider: `${url}/${version}/manual/zh/physics/physics-component.html`,
-            CylinderCollider: `${url}/${version}/manual/zh/physics/physics-component.html`,
-            MeshCollider: `${url}/${version}/manual/zh/physics/physics-component.html`,
+            CapsuleCollider: `${url}/${version}/manual/zh/physics/physics-collider.html`,
+            ConeCollider: `${url}/${version}/manual/zh/physics/physics-collider.html`,
+            CylinderCollider: `${url}/${version}/manual/zh/physics/physics-collider.html`,
+            MeshCollider: `${url}/${version}/manual/zh/physics/physics-collider.html`,
+            PlaneCollider: `${url}/${version}/manual/zh/physics/physics-collider.html`,
+            SphereCollider: `${url}/${version}/manual/zh/physics/physics-collider.html`,
+            SimplexCollider: `${url}/${version}/manual/zh/physics/physics-collider.html`,
+            TerrainCollider: `${url}/${version}/manual/zh/physics/physics-collider.html`,
+            ConfigurableConstraint: `${url}/${version}/manual/zh/physics/physics-constraint.html`,
+            FixedConstraint: `${url}/${version}/manual/zh/physics/physics-constraint.html`,
+            HingeConstraint: `${url}/${version}/manual/zh/physics/physics-constraint.html`,
+            PointToPointConstraint: `${url}/${version}/manual/zh/physics/physics-constraint.html`,
             RigidBody: `${url}/${version}/manual/zh/physics/physics-rigidbody.html`,
+            PhysicsMaterial: `${url}/${version}/manual/zh/physics/physics-material.html`,
             ConstantForce: `${url}/${version}/manual/zh/physics/physics-component.html`,
             VideoPlayer: `${url}/${version}/manual/zh/ui-system/components/editor/videoplayer.html`,
             WebView: `${url}/${version}/manual/zh/ui-system/components/editor/webview.html`,
             SafeArea: `${url}/${version}/manual/zh/ui-system/components/editor/safearea.html`,
             Terrain: `${url}/${version}/manual/zh/editor/terrain/`,
-            TiledMap: ``,
-            Spine: ``,
+            TiledMap: `${url}/${version}/manual/zh/editor/components/tiledmap.html`,
+            Spine: `${url}/${version}/manual/zh/editor/components/spine.html`,
+            DragonBones: `${url}/${version}/manual/zh/editor/components/dragonbones.html`,
             OctreeCulling: `${url}/${version}/manual/zh/advanced-topics/native-scene-culling.html`,
             LightProbe: ``,
         },
         assets: {
             javascript: `${url}/${version}/manual/zh/concepts/scene/node-component.html`,
+            texture: `${url}/${version}/manual/zh/asset/texture.html`,
+            'texture-cube': `${url}/${version}/manual/zh/asset/texture-cube.html`,
+            typescript: `${url}/${version}/manual/zh/scripting/setup.html`,
+            'animation-clip': `${url}/${version}/manual/zh/animation/animation-clip.html`,
+            'animation-graph': `${url}/${version}/manual/zh/animation/marionette/animation-graph.html`,
+            'animation-mask': `${url}/${version}/manual/zh/animation/marionette/animation-mask.html`,
+            'audio-clip': `${url}/${version}/manual/zh/asset/audio.html`,
+            'auto-atlas': `${url}/${version}/manual/zh/asset/auto-atlas.html`,
+            'bitmap-font': `${url}/${version}manual/zh/asset/font.html#位图字体`,
+            buffer: ``,
+            'effect-header': `${url}/${version}/manual/zh/shader/effect-chunk-index.html`,
+            effect: `${url}/${version}/manual/zh/shader/effect-inspector.html`,
+            'erp-texture-cube': `${url}/${version}/manual/zh/asset/texture-cube.html`,
+            gltf: `${url}/${version}/manual/zh/asset/model/glTF.html`,
+            fbx: `${url}/${version}/manual/zh/asset/model/mesh.html`,
+            json: `${url}/${version}manual/zh/asset/json.html`,
+            'label-atlas': `${url}/${version}/manual/zh/asset/label-atlas.html`,
+            material: `${url}/${version}/manual/zh/asset/material.html`,
+            particle: '',
+            'physics-material': `${url}/${version}/manual/zh/physics/physics-material.html`,
+            prefab: `${url}/${version}/manual/zh/asset/prefab.html`,
+            'render-flow': `${url}/${version}/manual/zh/render-pipeline/user-pipeline.html`,
+            'render-pipeline': `${url}/${version}/manual/zh/render-pipeline/user-pipeline.html`,
+            'render-stage': `${url}/${version}/manual/zh/render-pipeline/user-pipeline.html`,
+            'spine-data': `${url}/${version}/manual/zh/asset/spine.html`,
+            'sprite-atlas': `${url}/${version}/manual/zh/asset/atlas.html`,
+            'sprite-frame': `${url}/${version}/manual/zh/asset/sprite-frame.html`,
+            terrain: `${url}/${version}/manual/zh/editor/terrain/#创建地形`,
+            text: `${url}/${version}/manual/zh/asset/text.html`,
+            'tiled-map': `${url}/${version}/manual/manual/zh/asset/tiledmap.html`,
+            'ttf-font': `${url}/${version}/manual/zh/asset/font.html#动态字体`,
+            'video-clip': ``,
+            'render-texture': `${url}/${version}/manual/zh/asset/render-texture.html`,
+            dragonbones: `${url}/${version}/manual/zh/asset/dragonbones.html`,
+            'dragonbones-atlas': `${url}/${version}/manual/zh/asset/dragonbones.html`,
+            scene: `${url}/${version}/manual/zh/asset/scene.html`,
+            image: `${url}/${version}/manual/zh/asset/image.html`,
+            'gltf-animation':`${url}/${version}/manual/zh/animation/animation-clip.html`,
+            'gltf-embeded-image': `${url}/${version}/manual/zh/asset/model/glTF.html#gltf-图像`,
+            'gltf-material': `${url}/${version}/manual/zh/asset/material.html`,
+            'gltf-mesh': `${url}/${version}/manual/zh/asset/model/glTF.html#网格渲染器`,
+            'gltf-scene': `${url}/${version}/manual/zh/asset/model/glTF.html#gltf-场景`,
+            'gltf-skeleton': `${url}/${version}/manual/zh/asset/model/glTF.html#gltf-蒙皮`,
         },
     },
     ambient: {
@@ -182,6 +281,7 @@ module.exports = {
         skinning_root: '骨骼根节点的引用，对应控制此模型的动画组件所在节点',
         shadow_bias: '模型额外增加深度偏移值（世界空间单位）可以有效消除阴影摩尔纹，但是过大的值可能造成漏光现象',
         shadow_normal_bias: '模型额外增加法线深度偏移值（世界空间单位），可以消除物体表面朝向平行于阳光方向的阴影摩尔纹，<br>防止曲面出现锯齿状；但是过大的值可能会造成阴影位置偏差',
+        standard_skin_model: '模型额外设定全局唯一的标准皮肤模型',
     },
     sprite: {
         gray_scale: '是否开启灰度渲染模式',
@@ -962,6 +1062,10 @@ module.exports = {
             label: "Marionette 动画系统",
             description: "启用 Marionette 动画系统。",
         },
+        procedural_animation: {
+            label: "程序化动画",
+            description: "启用程序化动画相关的功能，例如姿态图等。",
+        },
         xr: {
             label: "XR",
             description: "启用 XR 功能系统。",
@@ -1042,12 +1146,93 @@ module.exports = {
             torque: '在世界坐标系中，对刚体施加的扭转力',
             localTorque: '在本地坐标系中，对刚体施加的扭转力',
         },
+        constraint: {
+            attachedBody: '约束附着的刚体',
+            connectedBody: '约束连接的刚体， 未指定时为连接世界刚体',
+            enableCollision: '是否开启两个刚体之间的碰撞',
+            pivotA: '约束在附着刚体的本地坐标系中的锚点',
+            pivotB: '约束在连接刚体的本地坐标系中的锚点',
+            breakForce: '约束在破坏之前可以施加的最大力',
+            breakTorque: '约束在破坏之前可以施加的最大扭转力',
+            axis: '约束在附着刚体的本地坐标系中的轴',
+            secondaryAxis: '附加刚体的本地坐标系中约束的次要轴',
+            autoCalculatePivotB: '从pivotA和两个刚体的相对变换自动推导出pivotB',
+            linearLimit: {
+                xMotion: '沿x轴的约束模式',
+                yMotion: '沿y轴的约束模式',
+                zMotion: '沿z轴的约束模式',
+                upper: '约束的上限',
+                lower: '约束的下限',
+                enableSoftConstraint: '是否启用软约束',
+                stiffness: '约束的刚度系数',
+                damping: '约束的阻尼系数',
+                restitution: '约束的恢复系数',
+            },
+            angularLimit: {
+                twistMotion: '扭转角度的约束模式',
+                swingMotion1: '摆动y角度的约束模式',
+                swingMotion2: '摆动z角度的约束模式',
+                twistExtent: '扭转角度限制',
+                swingExtent1: '摆动y角度限制',
+                swingExtent2: '摆动z角度限制',
+                enableSoftConstraintSwing: '是否启用摆动角度的软约束',
+                swingStiffness: '摆动约束的刚度系数',
+                swingDamping: '摆动约束的阻尼系数',
+                swingRestitution: '摆动约束的恢复系数',
+                enableSoftConstraintTwist: '是否启用扭转角度的软约束',
+                twistStiffness: '扭转约束的刚度系数',
+                twistDamping: '扭转约束的阻尼系数',
+                twistRestitution: '扭转约束的恢复系数',
+            },
+            linearDriver: {
+                xMode: '沿x轴的驱动器模式',
+                yMode: '沿y轴的驱动器模式',
+                zMode: '沿z轴的驱动器模式',
+                targetPosition: '驱动器的目标位置',
+                targetVelocity: '驱动器的目标速度',
+                strength: '驱动器的强度',
+            },
+            angularDriver: {
+                twistMode: '扭转角度的驱动器模式',
+                swingMode1: '摆动y角度的驱动器模式',
+                swingMode2: '摆动z角度的驱动器模式',
+                targetOrientation: '驱动器的目标方向',
+                targetAngularVelocity: '驱动器的目标角速度',
+                strength: '驱动器的强度',
+            },
+        },
+        material: {
+            friction: '材质的摩擦系数',
+            rollingFriction: '材质的滚动摩擦系数',
+            spinningFriction: '材质的旋转摩擦系数',
+            restitution: '材质的弹性系数',
+        },
+        character_controller: {
+            group: '碰撞分组',
+            minMoveDistance: '最小移动距离',
+            stepOffset: '最大爬台阶高度',
+            slopeLimit: '最大爬坡角度',
+            contactOffset: '接触间隙',
+            detectCollisions: '是否和其他碰撞体发生碰撞 (在不调用move方法的情况下)',
+            enableOverlapRecovery: '和其他碰撞体穿透时是否恢复',
+            center: '中心点在局部坐标系中的位置',
+            capsuleRadius: '胶囊体的球半径',
+            capsuleHeight: '胶囊体的高度 (胶囊体末端两个球心的距离)',
+            boxHalfHeight: '立方体的高度的一半',
+            boxHalfSideExtent: '立方体的横向宽度的一半',
+            boxHalfForwardExtent: '立方体的纵向宽度一半',
+        },
     },
     octree_culling: {
         enabled: '八叉树剔除开关，仅在原生平台中生效',
         minPos: '世界包围盒最小顶点的坐标',
         maxPos: '世界包围盒最大顶点的坐标',
         depth: '八叉树深度',
+    },
+    skin: {
+        enabled: '皮肤散射开关',
+        blurRadius: '该参数指定了次表面散射的范围，即卷积过滤器的宽度。',
+        sssIntensity: '该参数指定了次表面散射的强度',
     },
     light_probe: {
         giScale: 'GI乘数',
@@ -1057,6 +1242,7 @@ module.exports = {
         showProbe: '是否显示光照探针',
         showWireframe: '是否显示光照探针连线',
         showConvex: '是否显示光照探针凸包',
+        lightProbeSphereVolume:'光照探针全局显示大小',
     },
     light_probe_group: {
         method: '光照探针的自动生成算法',
@@ -1066,4 +1252,14 @@ module.exports = {
         minPos: '生成光照探针的包围盒最小点',
         maxPos: '生成光照探针的包围盒最大点',
     },
-};
+    reflection_probe: {
+        fastBake: '勾选则不会对生成的cubemap进行GGX卷积，烘焙速度非常快。',
+    },
+    color_grading: {
+        originalMap: '内置lut贴图路径internal/dependencies/textures/lut/。',
+    },
+},
+
+require('./animation'),
+
+));

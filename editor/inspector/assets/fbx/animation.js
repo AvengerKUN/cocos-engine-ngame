@@ -1,9 +1,16 @@
 'use strict';
 
-const { updateElementReadonly, updateElementInvalid } = require('../../utils/assets');
+const { updateElementReadonly, updateElementInvalid, setPropValue, getPropValue } = require('../../utils/assets');
+
 
 exports.template = /* html */`
 <div class="container">
+    <div class="animator-config">
+        <ui-prop class="animator-config-import-all-animator">
+            <ui-label slot="label" value="i18n:ENGINE.assets.fbx.GlTFUserData.mountAllAnimationsOnPrefab.name"></ui-label>
+            <ui-checkbox slot="content"></ui-checkbox>
+        </ui-prop>
+    </div>
     <div class="show-type-wrap">
         <ui-tab class="show-type" value="0">
             <ui-button value="time">Time</ui-button>
@@ -102,12 +109,12 @@ ui-section {
     text-align: center;
 }
 .container > .clips {
-    padding: 5px;
+    padding: 4px;
     border-radius: calc(var(--size-normal-radius) * 1px);
     overflow-y: auto;
     max-height: 250px;
     background: var(--color-normal-fill-emphasis);
-    margin-bottom: 20px;
+    margin-bottom: 8px;
 }
 .container > .clips > .clip {}
 .container > .clips > .clip > .table {
@@ -117,19 +124,17 @@ ui-section {
 }
 .container > .clips > .clip > .table > .header {
     display: flex;
-    line-height: 1.6em;
-    padding: 2px 5px;
-    margin-bottom: 5px;
-    border-bottom: 1px solid var(--color-normal-border-emphasis);
+    padding: 0 4px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--color-default-border);
 }
 .container > .clips > .clip > .table > .line {
     display: flex;
-    line-height: 1.6em;
-    padding: 2px 5px;
+    padding: 0 4px;
     cursor: pointer;
 }
 .container > .clips > .clip > .table > .line[active] {
-    background: var(--color-focus-fill);
+    background-color: var(--color-info-fill-important);
 }
 .container > .clips > .clip > .table > .line > .name,
 .container > .clips > .clip > .table > .header > .name {
@@ -143,14 +148,13 @@ ui-section {
 .container > .clips > .clip > .add-clip {
     display: flex;
     justify-content: flex-end;
-    margin-bottom: 10px;
 }
 .container > .clips > .clip > .add-clip > .button > ui-icon {
-    padding: 0 5px;
+    padding: 0 4px;
     border-radius: 2px;
     line-height: 16px;
-    margin-left: 13px;
-    margin-right: 5px;
+    margin-left: 10px;
+    margin-right: 2px;
     cursor: pointer;
 }
 .container > .clips > .clip > .add-clip > .button > ui-icon:hover {
@@ -313,6 +317,8 @@ ui-section {
 
 exports.$ = {
     container: '.container',
+    importAllAnimationsCheckbox: '.animator-config-import-all-animator ui-checkbox',
+    importAllAnimatorWrap: '.animator-config-import-all-animator',
     clips: '.clips',
     editor: '.editor',
     clipName: '.clip-name',
@@ -657,6 +663,31 @@ const Elements = {
             Object.assign(panel.$.controlDuration.style, panel.currentClipInfo.durationStyle);
             Object.assign(panel.$.controlLeft.style, panel.currentClipInfo.ctrlStartStyle);
             Object.assign(panel.$.controlRight.style, panel.currentClipInfo.ctrlEndStyle);
+        },
+    },
+    mountAllAnimationsOnPrefab: {
+        ready() {
+            const panel = this;
+
+            panel.$.importAllAnimationsCheckbox.addEventListener('change', panel.setProp.bind(panel, 'mountAllAnimationsOnPrefab', 'boolean'));
+            panel.$.importAllAnimationsCheckbox.addEventListener('confirm', () => {
+                panel.dispatch('snapshot');
+            });
+        },
+        update() {
+            const panel = this;
+
+            if (!panel.animationInfos) {
+                panel.$.importAllAnimatorWrap.style.display = 'none';
+                return;
+            } else {
+                panel.$.importAllAnimatorWrap.style.display = 'block';
+            }
+
+            panel.$.importAllAnimationsCheckbox.value = getPropValue.call(panel, panel.meta.userData.mountAllAnimationsOnPrefab, true);
+
+            updateElementInvalid.call(panel, panel.$.importAllAnimationsCheckbox, 'mountAllAnimationsOnPrefab');
+            updateElementReadonly.call(panel, panel.$.importAllAnimationsCheckbox);
         },
     },
 };
@@ -1114,6 +1145,12 @@ exports.methods = {
         Elements.editor.update.call(panel);
         panel.dispatch('change');
         panel.dispatch('snapshot');
+    },
+    setProp(prop, type, event) {
+        setPropValue.call(this, prop, type, event);
+
+        this.dispatch('change');
+        this.dispatch('track', { tab: 'animation', prop, value: event.target.value });
     },
 };
 

@@ -29,11 +29,10 @@ exports.template = /* html */`
 
 exports.style = /* css */`
 .preview {
-    margin-top: 10px;
     border-top: 1px solid var(--color-normal-border);
 }
 .preview > .info {
-    padding-top: 8px;
+    padding-top: 4px;
 }
 .preview > .info > ui-label {
     margin-right: 6px;
@@ -43,13 +42,14 @@ exports.style = /* css */`
     overflow: hidden;
     display: flex;
     flex: 1;
-    margin-right: 10px;
+    margin-right: 4px;
 }
 .preview >.image > .canvas {
     flex: 1;
 }
 .select-box {
     float: right;
+    margin-right: 4px;
 }
 .preview-channel {
     visibility: hidden;
@@ -75,8 +75,8 @@ async function callMeshPreviewFunction(funcName, ...args) {
     return await Editor.Message.request('scene', 'call-preview-function', 'scene:mesh-preview', funcName, ...args);
 }
 const previewSelectType = {
-    shaded: 'shaded',
-    uv: 'uv layout',
+    shaded: 'Shaded',
+    uv: 'UV Layout',
 };
 const Elements = {
     preview: {
@@ -166,7 +166,7 @@ const Elements = {
                 panel.$.previewType.innerHTML = `<option value="${previewSelectType.shaded}">${previewSelectType.shaded}</option>`;
             } else {
                 panel.$.previewType.innerHTML = Object.values(previewSelectType).map(v => `<option value="${v}">${v}</option>`).join('');
-                panel.$.previewChannel.innerHTML = panel.previewUVs.map((_, i) => `<option value="${i}">channel ${i}</option>`).join('');
+                panel.$.previewChannel.innerHTML = panel.previewUVs.map((_, i) => `<option value="${i}">Channel ${i}</option>`).join('');
             }
 
             panel.infoUpdate(info);
@@ -257,10 +257,10 @@ exports.methods = {
         panel.animationId = requestAnimationFrame(() => {
             panel.refreshPreview();
         });
-    }
+    },
 };
 
-exports.ready = function () {
+exports.ready = function() {
     for (const prop in Elements) {
         const element = Elements[prop];
         if (element.ready) {
@@ -269,7 +269,7 @@ exports.ready = function () {
     }
 };
 
-exports.update = function (assetList, metaList) {
+exports.update = function(assetList, metaList) {
     this.assetList = assetList;
     this.metaList = metaList;
     this.asset = assetList[0];
@@ -283,7 +283,7 @@ exports.update = function (assetList, metaList) {
     }
 };
 
-exports.close = function () {
+exports.close = function() {
     for (const prop in Elements) {
         const element = Elements[prop];
         if (element.close) {

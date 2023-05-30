@@ -17,13 +17,10 @@ exports.style = /* css */`
     display: flex;
     flex: 1;
     flex-direction: column;
-    padding-top: 5px;
 }
 
 .asset-fbx > .header {
-    text-align: center;
-    padding-bottom: 10px;
-    line-height: calc(var(--size-big-line) * 1px);
+    padding-bottom: 4px;
 }
 `;
 
@@ -95,6 +92,12 @@ const Elements = {
             panel.$.tabPanel.setAttribute('src', Components[panel.activeTab]);
             panel.$.tabPanel.update(panel.assetList, panel.metaList);
         },
+    },
+};
+
+exports.methods = {
+    apply() {
+        Editor.Message.broadcast('fbx-inspector:apply');
     },
 };
 

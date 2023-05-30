@@ -1,15 +1,22 @@
 import { DEBUG } from 'internal:constants';
 import { Node } from '../../scene-graph';
 import { assertIsTrue } from '../../core/data/utils/asserts';
-import { Pose, TransformFilter } from '../core/pose';
-import { PoseAllocator } from '../core/pose-allocator';
+import { Pose, PoseTransformSpace, TransformFilter } from '../core/pose';
+import { PoseStackAllocator } from '../core/pose-allocator';
 import { TransformArray } from '../core/transform-array';
-import { TransformHandle, MetaValueHandle } from '../core/animation-handle';
+import { TransformHandle, AuxiliaryCurveHandle } from '../core/animation-handle';
 import { Transform, ZERO_DELTA_TRANSFORM } from '../core/transform';
 import { VarInstance } from './variable';
 import { AnimationMask } from './animation-mask';
 import { error } from '../../core';
 import { partition } from '../../core/algorithm/partition';
+import { AnimationController } from './animation-controller';
+import { AnimationGraphCustomEventEmitter } from './event/custom-event-emitter';
+import { TransformSpace } from './pose-graph/pose-nodes/transform-space';
+import { PoseStashAllocator, RuntimeStashView } from './pose-graph/stash/runtime-stash';
+import { PoseHeapAllocator } from '../core/pose-heap-allocator';
+import { RuntimeMotionSyncManager } from './pose-graph/motion-sync/runtime-motion-sync';
+import { ReadonlyClipOverrideMap } from './clip-overriding';
 
 /**
  * This module contains stuffs related to animation graph's evaluation.
@@ -43,35 +50,71 @@ function findBoneByNameRecursively (from: Node, name: string): Node | null {
     return null;
 }
 
-/**
- * The binding context of an animation graph in layer-wide.
- */
-export interface AnimationGraphLayerWideBindingContext {
-    /**
-     * Indicates if the current layer is an additive layer.
-     */
-    additive: boolean;
-
-    /**
-     * The outer binding context.
-     */
-    outerContext: AnimationGraphBindingContext;
-}
-
 export type VarRegistry = Record<string, VarInstance>;
+
+export type TriggerResetter = (triggerName: string) => void;
+
+export interface EvaluationTimeAuxiliaryCurveView {
+    get(curveName: string): number;
+}
 
 /**
  * The binding context of an animation graph.
  */
 export class AnimationGraphBindingContext {
-    constructor (origin: Node, poseLayoutMaintainer: AnimationGraphPoseLayoutMaintainer, varRegistry: VarRegistry) {
+    constructor (
+        origin: Node,
+        poseLayoutMaintainer: AnimationGraphPoseLayoutMaintainer,
+        varRegistry: VarRegistry,
+        private _controller: AnimationController,
+
+        /**
+         * The associated custom event emitter.
+         * Any portion of the animation graph may hold and use this emitter to emit custom events.
+         */
+        public readonly customEventEmitter: AnimationGraphCustomEventEmitter,
+    ) {
         this._origin = origin;
         this._layoutMaintainer = poseLayoutMaintainer;
         this._varRegistry = varRegistry;
+        this._additiveFlagStack = [false]; // By default, non-additive.
     }
 
+    /**
+     * The origin node.
+     *
+     * The origin node is the origin from where the animation target start to resolve.
+     * It's now definitely the node hosting the running animation controller component.
+     */
     get origin () {
         return this._origin;
+    }
+
+    /**
+     * The animation controller component currently running the animation graph.
+     */
+    get controller () {
+        return this._controller;
+    }
+
+    /**
+     * A free function to reset specified trigger.
+     * @internal This function should only be accessed by the builtin state machine.
+     */
+    get triggerResetter () {
+        return this._triggerResetter;
+    }
+
+    get clipOverrides () {
+        return this._clipOverrides;
+    }
+
+    /**
+     * Returns if current context expects to have an additive pose.
+     */
+    get additive () {
+        const { _additiveFlagStack: additiveFlagStack } = this;
+        return additiveFlagStack[additiveFlagStack.length - 1];
     }
 
     public bindTransform (bone: string): TransformHandle | null {
@@ -98,24 +141,116 @@ export class AnimationGraphBindingContext {
         return boneNode.children.map((childNode) => childNode.name);
     }
 
-    public bineMetaValue (name: string): MetaValueHandle {
-        return this._layoutMaintainer.getOrCreateMetaValueBinding(name);
+    public getParentBoneNameByName (bone: string) {
+        const boneNode = findBoneByNameRecursively(this._origin, bone);
+        if (!boneNode) {
+            return null;
+        }
+        return boneNode === this._origin ? '' : boneNode.parent?.name;
+    }
+
+    public bindAuxiliaryCurve (name: string): AuxiliaryCurveHandle {
+        return this._layoutMaintainer.getOrCreateAuxiliaryCurveBinding(name);
+    }
+
+    public getEvaluationTimeAuxiliaryCurveView (): EvaluationTimeAuxiliaryCurveView {
+        return this._layoutMaintainer.auxiliaryCurveRegistry;
     }
 
     public getVar (id: string): VarInstance | undefined {
         return this._varRegistry[id];
     }
 
+    /**
+     * Pushes the `additive` flag. A later `_popAdditiveFlag` is required to pop the change.
+     * @internal
+     */
+    public _pushAdditiveFlag (additive: boolean) {
+        this._additiveFlagStack.push(additive);
+    }
+
+    /**
+     * Undo last `_pushAdditiveFlag`.
+     * @internal
+     */
+    public _popAdditiveFlag () {
+        assertIsTrue(this._additiveFlagStack.length > 1);
+        this._additiveFlagStack.pop();
+    }
+
+    /** @internal */
+    public _integrityCheck () {
+        return this._additiveFlagStack.length === 1;
+    }
+
+    public get stashView (): RuntimeStashView {
+        assertIsTrue(this._stashView);
+        return this._stashView;
+    }
+
+    public get motionSyncManager (): RuntimeMotionSyncManager {
+        assertIsTrue(this._motionSyncManager);
+        return this._motionSyncManager;
+    }
+
+    /**
+     * @internal
+     */
+    public _setLayerWideContextProperties (
+        stashView: RuntimeStashView,
+        motionSyncManager: RuntimeMotionSyncManager,
+    ) {
+        assertIsTrue(!this._isLayerWideContextPropertiesSet);
+        this._isLayerWideContextPropertiesSet = true;
+        this._stashView = stashView;
+        this._motionSyncManager = motionSyncManager;
+    }
+
+    /**
+     * @internal
+     */
+    public _unsetLayerWideContextProperties () {
+        assertIsTrue(this._isLayerWideContextPropertiesSet);
+        this._isLayerWideContextPropertiesSet = false;
+        this._stashView = undefined;
+        this._motionSyncManager = undefined;
+    }
+
+    /**
+     * @internal
+     */
+    public _setClipOverrides (clipOverrides: ReadonlyClipOverrideMap | undefined) {
+        this._clipOverrides = clipOverrides;
+    }
+
     private _origin: Node;
 
     private _layoutMaintainer: AnimationGraphPoseLayoutMaintainer;
 
-    private _varRegistry: VarRegistry
+    private _varRegistry: VarRegistry;
+
+    /** At least has one. */
+    private _additiveFlagStack: boolean[] = [];
+
+    private _triggerResetter: TriggerResetter = (name: string) => this._resetTrigger(name);
+
+    private _isLayerWideContextPropertiesSet = false;
+    private _stashView: RuntimeStashView | undefined;
+    private _motionSyncManager: RuntimeMotionSyncManager | undefined;
+    private _clipOverrides: ReadonlyClipOverrideMap | undefined = undefined;
+
+    private _resetTrigger (triggerName: string) {
+        const varInstance = this._varRegistry[triggerName];
+        if (!varInstance) {
+            return;
+        }
+        varInstance.value = false;
+    }
 }
 
 const cacheTransform = new Transform();
 
-export class MetaValueRegistry {
+export class AuxiliaryCurveRegistry {
     public names () {
         return this._namedCurves.keys();
     }
@@ -147,9 +282,9 @@ export enum LayoutChangeFlag {
     TRANSFORM_ORDER = 2,
 
     /**
-     * If this flag is set, means the meta value count has been changed.
+     * If this flag is set, means the auxiliary curve count has been changed.
      */
-    META_VALUE_COUNT = 4,
+    AUXILIARY_CURVE_COUNT = 4,
 }
 
 const checkBindStatus = (bindStarted = false): MethodDecorator => (_, _propertyKey, descriptor: TypedPropertyDescriptor<any>) => {
@@ -172,20 +307,82 @@ const checkBindStatus = (bindStarted = false): MethodDecorator => (_, _propertyK
 };
 
 export class AnimationGraphPoseLayoutMaintainer {
-    constructor (metaValueRegistry: MetaValueRegistry) {
-        this._metaValueRegistry = metaValueRegistry;
+    /**
+     * @param origin This node and all nodes under this node can be bound.
+     */
+    constructor (origin: Node, auxiliaryCurveRegistry: AuxiliaryCurveRegistry) {
+        this._origin = origin;
+        this._auxiliaryCurveRegistry = auxiliaryCurveRegistry;
     }
 
     get transformCount () {
         return this._transformRecords.length;
     }
 
-    get metaValueCount () {
-        return this._metaValueRecords.length;
+    get auxiliaryCurveCount () {
+        return this._auxiliaryCurveRecords.length;
+    }
+
+    get auxiliaryCurveRegistry (): { get(name: string): number; } {
+        return this._auxiliaryCurveRegistry;
     }
 
     @checkBindStatus(true)
     public getOrCreateTransformBinding (node: Node) {
+        const {
+            _origin: origin,
+        } = this;
+
+        // Ensure the node is origin or under origin.
+        let debugIntegrityCheckLengthOfPathToOrigin = 0;
+        let isValidNode = false;
+        for (let current: Node | null = node; current; current = current.parent) {
+            if (current === origin) {
+                isValidNode = true;
+                break;
+            }
+            if (DEBUG) {
+                ++debugIntegrityCheckLengthOfPathToOrigin;
+            }
+        }
+        if (!isValidNode) {
+            return null;
+        }
+
+        // Get or create the handle for the node.
+        const handle = this._getOrCreateTransformBinding(node);
+
+        // Also try to create handles for ancestors if we're not bounding origin.
+        // In other words, origin is not bound by default
+        // except that you explicitly bind to it.
+        if (node !== origin) {
+            if (DEBUG) {
+                --debugIntegrityCheckLengthOfPathToOrigin;
+                assertIsTrue(debugIntegrityCheckLengthOfPathToOrigin >= 0);
+            }
+
+            for (let parent: Node | null = node.parent; parent !== origin; parent = parent.parent) {
+                assertIsTrue(parent);
+                // But discard the result.
+                // eslint-disable-next-line no-void
+                void this._getOrCreateTransformBinding(parent);
+
+                if (DEBUG) {
+                    --debugIntegrityCheckLengthOfPathToOrigin;
+                    assertIsTrue(debugIntegrityCheckLengthOfPathToOrigin >= 0);
+                }
+            }
+        }
+
+        if (DEBUG) {
+            assertIsTrue(debugIntegrityCheckLengthOfPathToOrigin === 0);
+        }
+
+        return handle;
+    }
+
+    @checkBindStatus(true)
+    private _getOrCreateTransformBinding (node: Node) {
         const { _transformRecords: transformRecords } = this;
 
         const transformIndex = transformRecords.findIndex((transformRecord) => transformRecord.node === node);
@@ -221,26 +418,42 @@ export class AnimationGraphPoseLayoutMaintainer {
     }
 
     @checkBindStatus(true)
-    public getOrCreateMetaValueBinding (name: string) {
-        const { _metaValueRecords: metaValueRecords } = this;
+    public getOrCreateAuxiliaryCurveBinding (name: string) {
+        const { _auxiliaryCurveRecords: auxiliaryCurveRecords } = this;
 
-        const metaValueIndex = metaValueRecords.findIndex((record) => record.name === name);
-        if (metaValueIndex >= 0) {
-            const metaValueRecord = metaValueRecords[metaValueIndex];
-            ++metaValueRecord.refCount;
-            return metaValueRecord.handle;
+        const auxiliaryCurveIndex = auxiliaryCurveRecords.findIndex((record) => record.name === name);
+        if (auxiliaryCurveIndex >= 0) {
+            const auxiliaryCurveRecord = auxiliaryCurveRecords[auxiliaryCurveIndex];
+            ++auxiliaryCurveRecord.refCount;
+            return auxiliaryCurveRecord.handle;
         } else {
-            const newMetaValueIndex = metaValueRecords.length;
-            const metaValueRecord = new MetaValueRecord(
-                new MetaValueHandleInternal(this, newMetaValueIndex),
+            const newAuxiliaryCurveIndex = auxiliaryCurveRecords.length;
+            const auxiliaryCurveRecord = new AuxiliaryCurveRecord(
+                new AuxiliaryCurveHandleInternal(this, newAuxiliaryCurveIndex),
                 name,
             );
-            metaValueRecords.push(metaValueRecord);
-            return metaValueRecord.handle;
+            auxiliaryCurveRecords.push(auxiliaryCurveRecord);
+            return auxiliaryCurveRecord.handle;
         }
     }
 
-    public createTransformFilter (mask: Readonly<AnimationMask>, origin: Node) {
+    public createEvaluationContext () {
+        assertIsTrue(!this._bindStarted);
+        return new AnimationGraphEvaluationContext(
+            this.transformCount,
+            this.auxiliaryCurveCount,
+            this._parentTable.slice(),
+            this._origin,
+        );
+    }
+
+    public resetPoseStashAllocator (allocator: DeferredPoseStashAllocator) {
+        assertIsTrue(!this._bindStarted);
+        allocator._reset(this.transformCount, this.auxiliaryCurveCount);
+    }
+
+    public createTransformFilter (mask: Readonly<AnimationMask>) {
+        const { _origin: origin } = this;
         const involvedTransformIndices: number[] = [];
         for (const { node, handle } of this._transformRecords) {
             const path = countPath(origin, node);
@@ -281,7 +494,7 @@ export class AnimationGraphPoseLayoutMaintainer {
     public apply (pose: Pose) {
         const {
             transforms,
-            metaValues,
+            auxiliaryCurves,
         } = pose;
 
         const nTransforms = this._transformRecords.length;
@@ -296,11 +509,11 @@ export class AnimationGraphPoseLayoutMaintainer {
             );
         }
 
-        const nMetaValues = this._metaValueRecords.length;
-        for (let iMetaValue = 0; iMetaValue < nMetaValues; ++iMetaValue) {
-            const { name: curveName } = this._metaValueRecords[iMetaValue];
-            const curveValue = metaValues[iMetaValue];
-            this._metaValueRegistry.set(curveName, curveValue);
+        const nAuxiliaryCurves = this._auxiliaryCurveRecords.length;
+        for (let iAuxiliaryCurve = 0; iAuxiliaryCurve < nAuxiliaryCurves; ++iAuxiliaryCurve) {
+            const { name: curveName } = this._auxiliaryCurveRecords[iAuxiliaryCurve];
+            const curveValue = auxiliaryCurves[iAuxiliaryCurve];
+            this._auxiliaryCurveRegistry.set(curveName, curveValue);
         }
     }
 
@@ -319,9 +532,9 @@ export class AnimationGraphPoseLayoutMaintainer {
      * @engineInternal
      */
     @checkBindStatus(true)
-    public _destroyMetaValueHandle (index: number) {
-        assertIsTrue(index >= 0 && index < this._metaValueRecords.length, `Invalid meta value handle.`);
-        const record = this._metaValueRecords[index];
+    public _destroyAuxiliaryCurveHandle (index: number) {
+        assertIsTrue(index >= 0 && index < this._auxiliaryCurveRecords.length, `Invalid auxiliary value handle.`);
+        const record = this._auxiliaryCurveRecords[index];
         assertIsTrue(record.refCount > 0, `Something work wrong: refCount mismatch.`);
         --record.refCount;
     }
@@ -330,14 +543,14 @@ export class AnimationGraphPoseLayoutMaintainer {
     public startBind () {
         this._bindStarted = true;
         this._transformCountBeforeBind = this._transformRecords.length;
-        this._metaValueCountBeforeBind = this._metaValueRecords.length;
+        this._auxiliaryCurveCountBeforeBind = this._auxiliaryCurveRecords.length;
     }
 
     @checkBindStatus(true)
     public endBind () {
         const {
             _transformRecords: transformRecords,
-            _metaValueRecords: metaValueRecords,
+            _auxiliaryCurveRecords: auxiliaryCurveRecords,
         } = this;
 
         let changeFlags = 0;
@@ -368,10 +581,34 @@ export class AnimationGraphPoseLayoutMaintainer {
             }
         }
 
-        // Detect changes in meta values.
-        trimRecords(metaValueRecords);
-        if (metaValueRecords.length !== this._metaValueCountBeforeBind) {
-            changeFlags |= LayoutChangeFlag.META_VALUE_COUNT;
+        // Detect changes in auxiliary values.
+        trimRecords(auxiliaryCurveRecords);
+        if (auxiliaryCurveRecords.length !== this._auxiliaryCurveCountBeforeBind) {
+            changeFlags |= LayoutChangeFlag.AUXILIARY_CURVE_COUNT;
+        }
+
+        // Reconstruct the parent table.
+        const { _parentTable: parentTable, _origin: origin } = this;
+        parentTable.length = transformRecords.length;
+        for (let iTransform = 0; iTransform < transformRecords.length; ++iTransform) {
+            const { node } = transformRecords[iTransform];
+            if (node === origin) {
+                parentTable[iTransform] = -1;
+                continue;
+            }
+            const parent = node.parent;
+            if (parent === origin) {
+                // If the parent is the origin, the origin can be bound or not.
+                const parentIndex = transformRecords.findIndex((record) => record.node === parent);
+                parentTable[iTransform] = parentIndex >= 0 ? parentIndex : -1;
+            } else {
+                // In other case we have the promise: parent of a node should have also been bound.
+                const parentIndex = transformRecords.findIndex((record) => record.node === parent);
+                assertIsTrue(parentIndex >= 0, `Parent node is not bound!`);
+                // This is what we promised and what the evaluation context required.
+                assertIsTrue(parentIndex < iTransform);
+                parentTable[iTransform] = parentIndex;
+            }
         }
 
         this._bindStarted = false;
@@ -393,19 +630,21 @@ export class AnimationGraphPoseLayoutMaintainer {
             });
 
             this._transformCountBeforeBind = -1;
-            this._metaValueCountBeforeBind = -1;
+            this._auxiliaryCurveCountBeforeBind = -1;
         }
 
         return changeFlags;
     }
 
-    private _metaValueRegistry: MetaValueRegistry;
-    private _metaValueRecords: MetaValueRecord[] = [];
+    private _origin: Node;
+    private _auxiliaryCurveRegistry: AuxiliaryCurveRegistry;
+    private _auxiliaryCurveRecords: AuxiliaryCurveRecord[] = [];
     private _transformRecords: TransformRecord[] = [];
+    private _parentTable: number[] = [];
 
     private _bindStarted = false;
     private _transformCountBeforeBind = -1;
-    private _metaValueCountBeforeBind = -1;
+    private _auxiliaryCurveCountBeforeBind = -1;
 }
 
 interface AnimationRecord<THandle extends { index: number; }> {
@@ -437,15 +676,15 @@ class TransformRecord implements AnimationRecord<TransformHandleInternal> {
     public readonly defaultTransform: Readonly<Transform>;
 }
 
-class MetaValueRecord implements AnimationRecord<MetaValueHandleInternal> {
-    constructor (handle: MetaValueHandleInternal, name: string) {
+class AuxiliaryCurveRecord implements AnimationRecord<AuxiliaryCurveHandleInternal> {
+    constructor (handle: AuxiliaryCurveHandleInternal, name: string) {
         this.handle = handle;
         this.name = name;
     }
 
     public refCount = 1;
 
-    public readonly handle: MetaValueHandleInternal;
+    public readonly handle: AuxiliaryCurveHandleInternal;
 
     public readonly name: string;
 }
@@ -472,10 +711,57 @@ function trimRecords<TRecord extends AnimationRecord<any>> (records: TRecord[]) 
 
 export const defaultTransformsTag = Symbol('[[DefaultTransforms]]');
 
-export class AnimationGraphEvaluationContext {
-    constructor (layout: PoseLayout) {
-        this._poseAllocator = new PoseAllocator(layout.transformCount, layout.metaValueCount);
-        this[defaultTransformsTag] = new TransformArray(layout.transformCount);
+/**
+ * The settle context for animation graph building blocks(state machine/pose node/motion...etc).
+ */
+export class AnimationGraphSettleContext {
+    constructor (
+        private _layoutMaintainer: AnimationGraphPoseLayoutMaintainer,
+    ) {
+
+    }
+
+    /**
+     * Gets the number of transforms in pose.
+     */
+    public get transformCount () {
+        return this._layoutMaintainer.transformCount;
+    }
+
+    /**
+     * Creates a transform filter expressing specified animation mask effect.
+     * @param mask Animation mask.
+     * @returns Result transform filter.
+     */
+    public createTransformFilter (mask: Readonly<AnimationMask>): TransformFilter {
+        return this._layoutMaintainer.createTransformFilter(mask);
+    }
+}
+
+const cacheTransform_spaceConversion = new Transform();
+const cacheParentTransform_spaceConversion = new Transform();
+
+class AnimationGraphEvaluationContext {
+    constructor (
+        transformCount: number,
+        metaValueCount: number,
+        parentTable: readonly number[],
+        componentNode: Node,
+    ) {
+        if (DEBUG) {
+            assertIsTrue(transformCount === parentTable.length);
+            // We requires all parents are in front of children in `parentTable`.
+            assertIsTrue(parentTable.every((parentIndex, currentIndex) => {
+                if (parentIndex < 0) { // Root node
+                    return true;
+                }
+                return parentIndex < currentIndex;
+            }));
+        }
+        this._poseAllocator = new PoseStackAllocator(transformCount, metaValueCount);
+        this._parentTable = parentTable;
+        this._componentNode = componentNode;
+        this[defaultTransformsTag] = new TransformArray(transformCount);
     }
 
     public destroy () {
@@ -491,24 +777,37 @@ export class AnimationGraphEvaluationContext {
         return this._poseAllocator.allocatedCount;
     }
 
+    get parentTable () {
+        return this._parentTable;
+    }
+
     public pushDefaultedPose () {
         const pose = this._poseAllocator.push();
         pose.transforms.set(this[defaultTransformsTag]);
-        pose.metaValues.fill(0.0);
+        pose._poseTransformSpace = PoseTransformSpace.LOCAL;
+        pose.auxiliaryCurves.fill(0.0);
+        return pose;
+    }
+
+    public pushDefaultedPoseInComponentSpace () {
+        const pose = this.pushDefaultedPose();
+        this._poseTransformsSpaceLocalToComponent(pose);
         return pose;
     }
 
     public pushZeroDeltaPose () {
         const pose = this._poseAllocator.push();
         pose.transforms.fill(ZERO_DELTA_TRANSFORM);
-        pose.metaValues.fill(0.0);
+        pose._poseTransformSpace = PoseTransformSpace.LOCAL;
+        pose.auxiliaryCurves.fill(0.0);
         return pose;
     }
 
     public pushDuplicatedPose (src: Pose) {
         const pose = this._poseAllocator.push();
         pose.transforms.set(src.transforms);
-        pose.metaValues.set(src.metaValues);
+        pose._poseTransformSpace = src._poseTransformSpace;
+        pose.auxiliaryCurves.set(src.auxiliaryCurves);
         return pose;
     }
 
@@ -516,13 +815,224 @@ export class AnimationGraphEvaluationContext {
         this._poseAllocator.pop();
     }
 
-    private _poseAllocator: PoseAllocator;
+    /**
+     * @internal
+     */
+    public get _stackSize_debugging () {
+        return this._poseAllocator.allocatedCount;
+    }
+
+    /**
+     * @internal
+     */
+    public _isStackTopPose_debugging (pose: Pose) {
+        return pose === this._poseAllocator.top;
+    }
+
+    /** @internal */
+    public _poseTransformsSpaceLocalToComponent (pose: Pose) {
+        const { transforms } = pose;
+        const { length: nTransforms } = transforms;
+        for (let iTransform = 0; iTransform < nTransforms; ++iTransform) {
+            const parentTransformIndex = this._parentTable[iTransform];
+            if (parentTransformIndex < 0) { // Root node
+                continue;
+            }
+            const transform = transforms.getTransform(iTransform, cacheTransform_spaceConversion);
+            const parentTransform = transforms.getTransform(parentTransformIndex, cacheParentTransform_spaceConversion);
+            Transform.multiply(transform, parentTransform, transform);
+            transforms.setTransform(iTransform, transform);
+        }
+
+        pose._poseTransformSpace = PoseTransformSpace.COMPONENT;
+    }
+
+    /** @internal */
+    public _poseTransformsSpaceComponentToLocal (pose: Pose) {
+        const { transforms } = pose;
+        const { length: nTransforms } = transforms;
+        for (let iTransform = nTransforms - 1; iTransform >= 0; --iTransform) {
+            const parentTransformIndex = this._parentTable[iTransform];
+            if (parentTransformIndex < 0) { // Root node
+                continue;
+            }
+            const transform = transforms.getTransform(iTransform, cacheTransform_spaceConversion);
+            const parentTransform = transforms.getTransform(parentTransformIndex, cacheParentTransform_spaceConversion);
+            Transform.calculateRelative(transform, transform, parentTransform);
+            transforms.setTransform(iTransform, transform);
+        }
+
+        pose._poseTransformSpace = PoseTransformSpace.LOCAL;
+    }
+
+    public _convertPoseSpaceTransformToTargetSpace (
+        transform: Transform,
+        outTransformSpace: TransformSpace,
+        pose: Pose,
+        poseTransformIndex: number,
+    ) {
+        const poseSpace = pose._poseTransformSpace;
+        switch (outTransformSpace) {
+        default:
+            if (DEBUG) { assertIsTrue(false); }
+            break;
+        case TransformSpace.WORLD:
+            if (poseSpace === PoseTransformSpace.COMPONENT) {
+                // Component -> World.
+                Transform.multiply(transform, this._getComponentToWorldTransform(), transform);
+            } else {
+                assertIsTrue(poseSpace === PoseTransformSpace.LOCAL);
+                // Local -> World.
+                Transform.multiply(
+                    transform,
+                    this._getLocalToWorldTransform(cacheParentTransform_spaceConversion, pose, poseTransformIndex),
+                    transform,
+                );
+            }
+            break;
+        case TransformSpace.COMPONENT:
+            if (poseSpace === PoseTransformSpace.COMPONENT) {
+                // The transform is already in component.
+            } else {
+                assertIsTrue(poseSpace === PoseTransformSpace.LOCAL);
+                // Local -> Component.
+                Transform.multiply(
+                    transform,
+                    this._getLocalToComponentTransform(cacheParentTransform_spaceConversion, pose, poseTransformIndex),
+                    transform,
+                );
+            }
+            break;
+        case TransformSpace.PARENT: {
+            if (poseSpace === PoseTransformSpace.COMPONENT) {
+                // Component -> Parent.
+                // Parent_Component_Transform * result = Component
+                // result = inv(Component_Transform_of_Parent) * component
+                const parentTransformIndex = this._parentTable[poseTransformIndex];
+                if (parentTransformIndex >= 0) {
+                    const parentComponentTransform = pose.transforms.getTransform(parentTransformIndex, cacheParentTransform_spaceConversion);
+                    const invParentComponentTransform = Transform.invert(parentComponentTransform, parentComponentTransform);
+                    Transform.multiply(transform, invParentComponentTransform, transform);
+                }
+            } else {
+                assertIsTrue(poseSpace === PoseTransformSpace.LOCAL);
+                // Local -> Parent.
+                // The transform is already under parent.
+            }
+            break;
+        }
+        case TransformSpace.LOCAL: { // Local -> *
+            const nodeComponentTransform = pose.transforms.getTransform(poseTransformIndex, cacheParentTransform_spaceConversion);
+            const invNodeComponentTransform = Transform.invert(nodeComponentTransform, nodeComponentTransform);
+            Transform.multiply(transform, invNodeComponentTransform, transform);
+            break;
+        }
+        }
+        return transform;
+    }
+
+    public _convertTransformToPoseTransformSpace (
+        transform: Transform,
+        transformSpace: TransformSpace,
+        pose: Pose,
+        poseTransformIndex: number,
+    ) {
+        const poseSpace = pose._poseTransformSpace;
+
+        switch (transformSpace) {
+        default:
+            if (DEBUG) { assertIsTrue(false); }
+            break;
+        case TransformSpace.WORLD:
+            if (poseSpace === PoseTransformSpace.COMPONENT) {
+                // World -> Component.
+                const worldToComponent = Transform.invert(cacheParentTransform_spaceConversion, this._getComponentToWorldTransform());
+                Transform.multiply(transform, worldToComponent, transform);
+            } else {
+                assertIsTrue(poseSpace === PoseTransformSpace.LOCAL);
+                // World -> Local.
+                const localToWorld = this._getLocalToWorldTransform(cacheParentTransform_spaceConversion, pose, poseTransformIndex);
+                const worldToLocal = Transform.invert(localToWorld, localToWorld);
+                Transform.multiply(transform, worldToLocal, transform);
+            }
+            break;
+        case TransformSpace.COMPONENT:
+            if (poseSpace === PoseTransformSpace.COMPONENT) {
+                // Identity.
+            } else {
+                assertIsTrue(poseSpace === PoseTransformSpace.LOCAL);
+                // Component -> Local.
+                const localToComponent = this._getLocalToComponentTransform(cacheParentTransform_spaceConversion, pose, poseTransformIndex);
+                const componentToLocal = Transform.invert(localToComponent, localToComponent);
+                Transform.multiply(transform, componentToLocal, transform);
+            }
+            break;
+        case TransformSpace.PARENT: {
+            if (poseSpace === PoseTransformSpace.COMPONENT) {
+                // Parent -> Component.
+                const parentTransformIndex = this._parentTable[poseTransformIndex];
+                if (parentTransformIndex >= 0) {
+                    const parentTransform = pose.transforms.getTransform(parentTransformIndex, cacheParentTransform_spaceConversion);
+                    Transform.multiply(transform, parentTransform, transform);
+                }
+            } else {
+                // Parent -> Local.
+                // The transform is already in local space.
+            }
+            break;
+        }
+        case TransformSpace.LOCAL: {
+            const currentTransform = pose.transforms.getTransform(poseTransformIndex, cacheParentTransform_spaceConversion);
+            Transform.multiply(transform, currentTransform, transform);
+            break;
+        }
+        }
+
+        return transform;
+    }
+
+    private _poseAllocator: PoseStackAllocator;
+
+    private _parentTable: readonly number[];
+
+    private _componentNode: Node;
+
+    private _cacheComponentToWorldTransform = new Transform();
+
+    private _getComponentToWorldTransform () {
+        const result = this._cacheComponentToWorldTransform;
+        const componentNode = this._componentNode;
+        result.position = componentNode.worldPosition;
+        result.rotation = componentNode.worldRotation;
+        result.scale = componentNode.worldScale;
+        return result;
+    }
+
+    private _getLocalToComponentTransform (out: Transform, pose: Pose, transformIndex: number) {
+        const { _parentTable: parentTable } = this;
+
+        Transform.setIdentity(out);
+        for (let iTransform = transformIndex; iTransform >= 0; iTransform = parentTable[iTransform]) {
+            const localTransform = pose.transforms.getTransform(iTransform, cacheTransform_spaceConversion);
+            Transform.multiply(out, localTransform, out);
+        }
+
+        return out;
+    }
+
+    private _getLocalToWorldTransform (out: Transform, pose: Pose, transformIndex: number) {
+        this._getLocalToComponentTransform(out, pose, transformIndex);
+        Transform.multiply(out, this._getComponentToWorldTransform(), out);
+        return out;
+    }
 }
+
+export type { AnimationGraphEvaluationContext };
 
 export interface PoseLayout {
     transformCount: number;
 
-    metaValueCount: number;
+    auxiliaryCurveCount: number;
 }
 
 class TransformHandleInternal implements TransformHandle {
@@ -542,19 +1052,108 @@ class TransformHandleInternal implements TransformHandle {
     private _host: AnimationGraphPoseLayoutMaintainer;
 }
 
-class MetaValueHandleInternal implements MetaValueHandle {
+class AuxiliaryCurveHandleInternal implements AuxiliaryCurveHandle {
     constructor (host: AnimationGraphPoseLayoutMaintainer, index: number) {
         this._host = host;
         this.index = index;
     }
 
-    declare __brand: MetaValueHandle['__brand'];
+    declare __brand: AuxiliaryCurveHandle['__brand'];
 
     public index = -1;
 
     public destroy () {
-        this._host._destroyMetaValueHandle(this.index);
+        this._host._destroyAuxiliaryCurveHandle(this.index);
     }
 
     private _host: AnimationGraphPoseLayoutMaintainer;
+}
+
+/**
+ * The update context for animation graph building blocks(state machine/pose node/motion...etc).
+ */
+export interface AnimationGraphUpdateContext {
+    /**
+     * Delta time to update.
+     */
+    readonly deltaTime: number;
+
+    /**
+     * Indicative weight of the updating target.
+     *
+     * The updating target shall not, for example, weight the result pose by this weight.
+     */
+    readonly indicativeWeight: number;
+}
+
+/**
+ * Utility class to generate animation graph context.
+ *
+ * The result of each method of this class is kept available until next call on any of these methods.
+ */
+export class AnimationGraphUpdateContextGenerator {
+    /**
+     * Generates a context which has specified attributes.
+     * @param deltaTime The result context's `.deltaTime`.
+     * @param indicativeWeight The result context's `.indicativeWeight`.
+     * @returns The result context.
+     */
+    public generate (
+        deltaTime: number,
+        indicativeWeight: number,
+    ) {
+        this._context.deltaTime = deltaTime;
+        this._context.indicativeWeight = indicativeWeight;
+        return this._context as AnimationGraphUpdateContext;
+    }
+
+    /**
+     * Forks specified `base` context so that the result context is same with the base
+     * except that the result indicative weight is taken from base and multiplied by `subWeight`.
+     * @param base The base context.
+     * @param subWeight The sub weight.
+     * @returns The result context.
+     */
+    public forkSubWeight (
+        base: AnimationGraphUpdateContext,
+        subWeight: number,
+    ) {
+        this._context.deltaTime = base.deltaTime;
+        this._context.indicativeWeight = base.indicativeWeight * subWeight;
+    }
+
+    private readonly _context: ReusableUpdateContext = {
+        deltaTime: 0.0,
+        indicativeWeight: 0.0,
+    };
+}
+
+interface ReusableUpdateContext extends AnimationGraphUpdateContext {
+    deltaTime: number;
+    indicativeWeight: number;
+}
+
+export class DeferredPoseStashAllocator implements PoseStashAllocator {
+    get allocatedPoseCount () {
+        assertIsTrue(this._allocator);
+        return this._allocator.allocatedCount;
+    }
+
+    /** @internal */
+    public _reset (transformCount: number, auxiliaryCurveCount: number) {
+        this._allocator = new PoseHeapAllocator(transformCount, auxiliaryCurveCount);
+    }
+
+    public allocatePose (): Pose {
+        assertIsTrue(this._allocator);
+        const pose = this._allocator.allocatePose();
+        return pose;
+    }
+
+    public destroyPose (pose: Pose): void {
+        assertIsTrue(this._allocator);
+        return this._allocator.destroyPose(pose);
+    }
+
+    private _allocator: PoseHeapAllocator | null = null;
 }

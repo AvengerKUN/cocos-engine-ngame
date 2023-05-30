@@ -287,6 +287,10 @@ TextureBarrier *DeviceAgent::getTextureBarrier(const TextureBarrierInfo &info) {
     return _actor->getTextureBarrier(info);
 }
 
+BufferBarrier *DeviceAgent::getBufferBarrier(const BufferBarrierInfo &info) {
+    return _actor->getBufferBarrier(info);
+}
+
 template <typename T>
 void doBufferTextureCopy(const uint8_t *const *buffers, Texture *texture, const BufferTextureCopy *regions, uint32_t count, MessageQueue *mq, T *actor) {
     uint32_t bufferCount = 0U;
@@ -440,6 +444,15 @@ void DeviceAgent::presentWait() {
     _mainMessageQueue->finishWriting();
     _currentIndex = (_currentIndex + 1) % MAX_FRAME_INDEX;
     _frameBoundarySemaphore.wait();
+}
+
+void DeviceAgent::frameSync() {
+    ENQUEUE_MESSAGE_1(
+        _mainMessageQueue, FrameSync,
+        actor, _actor,
+        {
+            actor->frameSync();
+        });
 }
 
 } // namespace gfx
