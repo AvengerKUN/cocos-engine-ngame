@@ -33,6 +33,7 @@ import { CollisionMatrix } from './collision-matrix';
 import { PhysicsGroup } from './physics-enum';
 import { constructDefaultWorld, IWorldInitData, selector } from './physics-selector';
 import { assetManager, builtinResMgr } from '../../asset/asset-manager';
+import { IPhysicsSelector } from '../../physics-2d/framework/physics-selector';
 import { Collider } from './components/colliders/collider';
 
 cclegacy.internal.PhysicsGroup = PhysicsGroup;
@@ -218,35 +219,6 @@ export class PhysicsSystem extends System implements IWorldInitData {
         this._material.on(PhysicsMaterial.EVENT_UPDATE, this._updateMaterial, this);
     }
 
-    // eslint-disable-next-line consistent-return
-    private initDefaultMaterial (): Promise<void> {
-        if (this._material != null) return Promise.resolve();
-
-        const builtinMaterial = builtinResMgr.get<PhysicsMaterial>('default-physics-material');
-        if (!builtinMaterial) {
-            console.error('PhysicsSystem initDefaultMaterial() Failed to load builtinMaterial');
-            return Promise.resolve();
-        }
-
-        const userMaterial = settings.querySettings(Settings.Category.PHYSICS, 'defaultMaterial');
-        if (!userMaterial) { //use built-in default physics material
-            this.setDefaultPhysicsMaterial(builtinMaterial);
-            return Promise.resolve();
-        } else { //use user customized default physics material
-            return new Promise<PhysicsMaterial>((resolve, reject) => {
-                assetManager.loadAny(userMaterial, (err, asset) => ((err || !(asset instanceof PhysicsMaterial))
-                    ? reject(err)
-                    : resolve(asset)));
-            }).then((asset) => {
-                this.setDefaultPhysicsMaterial(asset);
-            }).catch((reason) => {
-                warn(reason);
-                warn(`Failed to load user customized default physics material: ${userMaterial}, will fallback to built-in default physics material`);
-                this.setDefaultPhysicsMaterial(builtinMaterial);
-            });
-        }
-    }
-
     /**
      * @en
      * Gets the wrappered object of the physical world through which you can access the actual underlying object.
@@ -332,8 +304,9 @@ export class PhysicsSystem extends System implements IWorldInitData {
     private _accumulator = 0;
     private _sleepThreshold = 0.1;
     private readonly _gravity = new Vec3(0, -10, 0);
+    private static _initMaterial:PhysicsMaterial;
     private _material!: PhysicsMaterial; //default physics material
-    private static readonly _instance: PhysicsSystem | null = null;
+    private static _instance: PhysicsSystem | null = null;
     private readonly raycastOptions: IRaycastOptions = {
         group: -1,
         mask: -1,
@@ -765,6 +738,12 @@ export class PhysicsSystem extends System implements IWorldInitData {
      * 预先加载模块的情况下，会自动执行。
      */
     static constructAndRegister () {
+        // const enabled = settings.querySettings(Settings.Category.PHYSICS, 'enabled') ?? true;
+        // if (!enabled) { return; }
+
+        // game.onPostProjectInitDelegate.add(PhysicsSystem.initDefaultMaterial);
+
+        
         const enabled = settings.querySettings(Settings.Category.PHYSICS, 'enabled') ?? true;
         if (!enabled) { return; }
         if (!PhysicsSystem._instance) {
@@ -773,10 +752,98 @@ export class PhysicsSystem extends System implements IWorldInitData {
             sys.resetConfiguration();
             constructDefaultWorld(sys);
             (PhysicsSystem._instance as unknown as PhysicsSystem) = sys;
-            director.registerSystem(PhysicsSystem.ID, sys, sys.priority);
+            // director.registerSystem(PhysicsSystem.ID, sys, sys.priority);
 
-            game.onPostProjectInitDelegate.add(sys.initDefaultMaterial.bind(sys));
+            game.onPostProjectInitDelegate.add(PhysicsSystem.initDefaultMaterial);
         }
+
+        // if (!PhysicsSystem._instance) {
+        //     // Construct physics world and physics system only once
+        //     const sys = new PhysicsSystem();
+        //     sys.resetConfiguration();
+        //     constructDefaultWorld(sys);
+        //     (PhysicsSystem._instance as unknown as PhysicsSystem) = sys;
+        //     director.registerSystem(PhysicsSystem.ID, sys, sys.priority);
+
+        // }
+    }
+
+    private initDefaultMaterial(){
+        this.setDefaultPhysicsMaterial(PhysicsSystem._initMaterial);
+    }
+
+    // eslint-disable-next-line consistent-return
+    private static initDefaultMaterial (): Promise<void> {
+
+        if (PhysicsSystem._initMaterial != null) return Promise.resolve();
+
+        const builtinMaterial = builtinResMgr.get<PhysicsMaterial>('default-physics-material');
+        if (!builtinMaterial) {
+            console.error('PhysicsSystem initDefaultMaterial() Failed to load builtinMaterial');
+            if(PhysicsSystem._instance){
+                PhysicsSystem._instance.initDefaultMaterial();
+            }
+            return Promise.resolve();
+        }
+
+        const userMaterial = settings.querySettings(Settings.Category.PHYSICS, 'defaultMaterial');
+        if (!userMaterial) { //use built-in default physics material
+            PhysicsSystem._initMaterial = builtinMaterial;
+            return Promise.resolve();
+        } else { //use user customized default physics material
+            return new Promise<PhysicsMaterial>((resolve, reject) => {
+                assetManager.loadAny(userMaterial, (err, asset) => ((err || !(asset instanceof PhysicsMaterial))
+                    ? reject(err)
+                    : resolve(asset)));
+            }).then((asset) => {
+                PhysicsSystem._initMaterial = asset;
+                if(PhysicsSystem._instance){
+                    PhysicsSystem._instance.initDefaultMaterial();
+                }
+            }).catch((reason) => {
+                warn(reason);
+                warn(`Failed to load user customized default physics material: ${userMaterial}, will fallback to built-in default physics material`);
+                PhysicsSystem._initMaterial = builtinMaterial;
+                if(PhysicsSystem._instance){
+                    PhysicsSystem._instance.initDefaultMaterial();
+                }
+            });
+        }
+
+    }
+
+    static initNGamePhysics(){
+        console.log("NGame_PhysicsSystem_initNGamePhysics");
+
+        if (!PhysicsSystem._instance) {
+
+            const sys = new PhysicsSystem();
+            sys.resetConfiguration();
+            constructDefaultWorld(sys);
+            (PhysicsSystem._instance as unknown as PhysicsSystem) = sys;
+            // director.registerSystem(PhysicsSystem.ID, sys, sys.priority);
+            sys.initDefaultMaterial();
+
+        }else{
+            PhysicsSystem.destroyNGamePhysics();
+            PhysicsSystem.initNGamePhysics();
+        }
+
+    }   
+
+    static destroyNGamePhysics(){
+
+        console.log("NGame_PhysicsSystem_destroyNGamePhysics");
+
+        if(PhysicsSystem._instance) {
+            // director.unregisterSystem(PhysicsSystem._instance);
+            //清除物理
+            PhysicsSystem.instance.physicsWorld.destroy();
+            const mutableSelector = selector as Mutable<IPhysicsSelector>;
+            mutableSelector.physicsWorld = null;
+            PhysicsSystem._instance = null;
+        }
+
     }
 }
 
