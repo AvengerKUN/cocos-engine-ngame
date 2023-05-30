@@ -269,6 +269,7 @@ export class BlendStateEditor {
     @editable
     public isIndepend = false;
 
+    @type(Color)
     @serializable
     @editable
     public blendColor: Color = Color.WHITE;
