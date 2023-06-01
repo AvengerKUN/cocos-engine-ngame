@@ -48,6 +48,7 @@ import { MeshBuffer } from './mesh-buffer';
 import { scene } from '../../render-scene';
 import { builtinResMgr } from '../../asset/asset-manager';
 import { RenderingSubMesh } from '../../asset/assets';
+import { DynamicAtlasProManager } from '../utils';
 
 const _dsInfo = new DescriptorSetInfo(null!);
 const m4_1 = new Mat4();
@@ -380,6 +381,12 @@ export class Batcher2D implements IBatcher {
      * @param transform - Node type transform, if passed, then batcher will consider it's using model matrix, could be null
      */
     public commitComp (comp: UIRenderer, renderData: BaseRenderData|null, frame: TextureBase|SpriteFrame|null, assembler, transform: Node|null) {
+
+        if(frame instanceof SpriteFrame)
+            DynamicAtlasProManager.instance.commit(comp,renderData,frame,assembler,transform);
+        else
+            DynamicAtlasProManager.instance.block();
+
         let dataHash = 0;
         let mat;
         let bufferID = -1;
@@ -445,6 +452,7 @@ export class Batcher2D implements IBatcher {
      * @deprecated since v3.6.2, please use [[commitMiddleware]] instead
      */
     public commitIA (renderComp: UIRenderer, ia: InputAssembler, tex?: TextureBase, mat?: Material, transform?: Node) {
+        DynamicAtlasProManager.instance.block();
         // if the last comp is spriteComp, previous comps should be batched.
         if (this._currMaterial !== this._emptyMaterial) {
             this.autoMergeBatches(this._currComponent!);
@@ -492,6 +500,7 @@ export class Batcher2D implements IBatcher {
      */
     public commitMiddleware (comp: UIRenderer, meshBuffer: MeshBuffer, indexOffset: number,
         indexCount: number, tex: TextureBase, mat: Material, enableBatch: boolean) {
+        DynamicAtlasProManager.instance.block();
         // check if need merge draw batch
         const texture = tex.getGFXTexture();
         if (enableBatch && this._middlewareEnableBatch && this._middlewareBuffer === meshBuffer
@@ -537,6 +546,7 @@ export class Batcher2D implements IBatcher {
      * @param mat - The material used, could be null
      */
     public commitModel (comp: UIMeshRenderer | UIRenderer, model: Model | null, mat: Material | null) {
+        DynamicAtlasProManager.instance.block();
         // if the last comp is spriteComp, previous comps should be batched.
         if (this._currMaterial !== this._emptyMaterial) {
             this.autoMergeBatches(this._currComponent!);

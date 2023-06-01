@@ -194,3 +194,14 @@ export function copy<T> (array: T[]) {
     }
     return cloned;
 }
+
+
+/**
+ * 找到数组相同的值
+ */
+export function queryList<T>(...array:T[]){
+    let query = array[0];
+    if(query){
+        
+    }
+}
