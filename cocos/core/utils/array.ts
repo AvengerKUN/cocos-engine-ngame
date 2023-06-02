@@ -199,9 +199,57 @@ export function copy<T> (array: T[]) {
 /**
  * 找到数组相同的值
  */
-export function queryList<T>(...array:T[]){
+export function queryContains<T>(...array:T[][]){
     let query = array[0];
+    let index = 1;
     if(query){
-        
+
+        let lastQuery;
+        let repeats = [...query];
+
+        while(lastQuery = array[index++]){
+
+            lastQuery = new Set(lastQuery);
+
+            for (let index = repeats.length - 1; index >= 0; index--) {
+                const element = repeats[index];
+                if(!(lastQuery.has(element))){
+                    repeats.splice(index,1);
+                }
+            }
+
+        }
+
+        return repeats;
+    }else{
+        return query;
     }
+}
+
+//获取最大值的下标
+export function getMaxIndex(arr:number[]) {
+    var max = arr[0];
+    //声明了个变量 保存下标值
+    var index = 0;
+    for (var i = 0; i < arr.length; i++) {
+        if (max < arr[i]) {
+            max = arr[i];
+            index = i;
+        }
+    }
+    return index;
+}
+
+//获取最小值的下标
+export function getMinIndex(arr:number[]) {
+    var min = arr[0];
+    //声明了个变量 保存下标值
+    var index = 0;
+    for (var i = 0; i < arr.length; i++) {
+        if (min > arr[i]) {
+            min = arr[i];
+            index = i;
+        }
+    }
+    return index;
 }

@@ -26,21 +26,28 @@ import { PixelFormat } from '../../../asset/assets/asset-enum';
 import { ImageAsset } from '../../../asset/assets/image-asset';
 import { Texture2D } from '../../../asset/assets/texture-2d';
 import { BufferTextureCopy } from '../../../gfx';
-import { cclegacy } from '../../../core';
+import { cclegacy, v2 } from '../../../core';
 import { SpriteFrame } from '../../assets/sprite-frame';
+import { TextureBase } from '../../../asset/assets/texture-base';
 
 const space = 2;
 
 export class Atlas {
-    private _texture: DynamicAtlasTexture;
-    private _width: any;
-    private _height: any;
-    private _x: number;
-    private _y: number;
-    private _nexty: number;
-    private _innerTextureInfos = {};
-    private _innerSpriteFrames: SpriteFrame[];
-    private _count: number;
+    protected _texture: DynamicAtlasTexture;
+    protected _width: any;
+    get width(){
+        return this._width;
+    }
+    protected _height: any;
+    get height(){
+        return this._height;
+    }
+    protected _x: number;
+    protected _y: number;
+    protected _nexty: number;
+    protected _innerTextureInfos = {};
+    protected _innerSpriteFrames: SpriteFrame[];
+    protected _count: number;
 
     constructor (width, height) {
         const texture = new DynamicAtlasTexture();
@@ -209,6 +216,25 @@ export class Atlas {
     public destroy () {
         this.reset();
         this._texture.destroy();
+    }
+
+
+    /**
+     * 传入贴图计算刚刚好的大小
+     */
+    static compute(textures:TextureBase[]){
+
+        let x = space;
+        let y = space;
+
+        for (let index = 0; index < textures.length; index++) {
+            let texture = textures[index];
+            y = Math.max(y,texture.height + space + space)
+            x += (texture.width + space);
+        }
+
+        return v2(x,y);
+
     }
 }
 

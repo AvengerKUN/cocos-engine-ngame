@@ -32,7 +32,7 @@ import { IBatcher } from '../renderer/i-batcher';
 import { UIRenderer, InstanceMaterialType } from '../framework/ui-renderer';
 import { PixelFormat } from '../../asset/assets/asset-enum';
 import { TextureBase } from '../../asset/assets/texture-base';
-import { Material, RenderTexture } from '../../asset/assets';
+import { Material, RenderTexture, Texture2D } from '../../asset/assets';
 import { NodeEventType } from '../../scene-graph/node-event';
 
 /**
@@ -489,6 +489,8 @@ export class Sprite extends UIRenderer {
 
     public onEnable () {
         super.onEnable();
+
+        console.log((this.spriteFrame?.texture as Texture2D).image)
 
         // Force update uv, material define, active material, etc
         this._activateMaterial();
