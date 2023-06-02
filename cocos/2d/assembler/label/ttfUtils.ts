@@ -307,9 +307,11 @@ export const ttfUtils =  {
 
     _uploadTexture (comp: Label) {
         // May better for JIT
+        const frame = comp.ttfSpriteFrame!;
         if (comp.cacheMode === Label.CacheMode.BITMAP) {
-            const frame = comp.ttfSpriteFrame!;
             dynamicAtlasManager.deleteAtlasSpriteFrame(frame);
+            frame._resetDynamicAtlasFrame();
+        }else{
             frame._resetDynamicAtlasFrame();
         }
 
@@ -346,6 +348,8 @@ export const ttfUtils =  {
                     }
                 }
             }
+            
+            tex._uuid = comp.string + "_" + comp.color + "_" + frame.rect + "_" + comp.fontSize + comp.fontFamily;
         }
     },
 

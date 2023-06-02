@@ -490,8 +490,6 @@ export class Sprite extends UIRenderer {
     public onEnable () {
         super.onEnable();
 
-        console.log((this.spriteFrame?.texture as Texture2D).image)
-
         // Force update uv, material define, active material, etc
         this._activateMaterial();
         const spriteFrame = this._spriteFrame;

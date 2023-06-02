@@ -4,6 +4,7 @@ import { Texture2D } from '../../../asset/assets/texture-2d';
 import { TextureBase } from '../../../asset/assets/texture-base';
 import { Size, cclegacy, size, v2 } from '../../../core';
 import { Atlas } from '../dynamic-atlas/atlas';
+import { SpriteFrame } from '../../assets/sprite-frame';
 
 const space = 2;
 
@@ -19,6 +20,9 @@ export default class AtlasPro extends Atlas{
     textures:Texture2D[] = [];
     //贴图坐标信息
     textureInfos:{[uuid:string]:AtlasInfo} = {};
+    
+    //记录读取过信息的SpriteFrame
+    frames:SpriteFrame[] = [];
 
     static Index:number = 0;
 
@@ -26,7 +30,21 @@ export default class AtlasPro extends Atlas{
     
     constructor (width, height) {
         super(width, height)
-        this.uuid = `${AtlasPro.Index++}`;
+        this.uuid = this._texture.getId();
+    }
+
+
+    getTexture(){
+        return this._texture;
+    }
+
+    //获取信息
+    getInfo(frame:SpriteFrame,texture:TextureBase){
+        let info = this.textureInfos[texture.uuid];
+        if(info){
+            this.frames.push(frame);
+        }
+        return info;
     }
 
     /**
@@ -78,7 +96,7 @@ export default class AtlasPro extends Atlas{
             this._count++;
             this._x += width + space;
             this.textureInfos[texture.uuid] = info
-
+            this.textures.push(texture);
         }
 
         return info;

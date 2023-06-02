@@ -8,7 +8,7 @@ import { Node } from '../../../scene-graph';
 import { Material, Texture2D } from '../../../asset/assets';
 import { builtinResMgr } from '../../../asset/asset-manager';
 import { Texture } from '../../../gfx';
-import { Label } from '../../components';
+import { Label, Sprite } from '../../components';
 import AtlasPro from './AtlasPro';
 import { array } from '../../../core/utils/js';
 
@@ -22,7 +22,7 @@ class DynamicAtlasCommit{
     uuids:string[] = [];
     commits:AtlasCommit[] = [];
     //是否都合批
-    isAllBatch:boolean = false;
+    isAllBatch:boolean = true;
 }
 
 /**
@@ -47,6 +47,15 @@ export class DynamicAtlasProManager extends System{
     //所有合图{合图Id:合图}
     atlases:{[id:string]:AtlasPro} = {};
 
+    //记入需要删除的Atlas
+    deletes:string[] = [];
+
+    //是否清理
+    _isClear:boolean = true;
+
+    //多出数量
+    excess:number = 2;
+
     //提交渲染顺序
     commit(render: UIRenderer, renderData: BaseRenderData|null, frame: SpriteFrame, assembler: any, transform: Node | null){
 
@@ -56,23 +65,19 @@ export class DynamicAtlasProManager extends System{
             return;
         }
 
-        let texture = frame.texture;
-        let uuid = texture.uuid;
-        if(uuid == "" && render instanceof Label){
-            //如果是Label 则 主动赋值一个UUID
-            uuid = texture._uuid = render.string + "_" + render.color + "_" + frame.rect + "_" + render.fontSize + render.fontFamily;
-        }
+        let texture = frame.original?._texture || frame.texture;
 
         this.commits[this.commits.length - 1].commits.push({
             render,
             frame,
             material:render.customMaterial,
         });
-        this.commits[this.commits.length - 1].uuids.push(frame.texture.uuid);
-        this.textures[frame.texture.uuid] = frame.texture as Texture2D;
-        if(frame.original){
-            this.commits[this.commits.length - 1].isAllBatch = true;
+        this.commits[this.commits.length - 1].uuids.push(texture.uuid);
+        this.textures[texture.uuid] = texture as Texture2D;
+        if(!frame.original){
+            this.commits[this.commits.length - 1].isAllBatch = false;
         }
+        array.fastRemove(this.deletes,frame.texture.getId())
     }
 
     //添加一个打断记录
@@ -81,10 +86,42 @@ export class DynamicAtlasProManager extends System{
     }
 
     postUpdate(dt: number): void {
-        console.log(this.commits,this.textures);
+        console.log(this.commits,this.textures,this.atlases);
         this.optimize();
+        this._isClear && (this._clear())
         this.commits = [new DynamicAtlasCommit()];
         this.textures = {};
+        this.deletes = Object.keys(this.atlases);
+    }
+
+    public clear(){
+        this._isClear = true;
+    }
+
+    //清除不需要的Atlas
+    _clear(){
+
+        for (let index = 0; index < this.deletes.length; index++) {
+            const atlasKey = this.deletes[index];
+            console.log("清理",atlasKey);
+            let atlas = this.atlases[atlasKey];
+            //重置用过atlas的SpriteFrame
+            for (let index = 0; index < atlas.frames.length; index++) {
+                const frame = atlas.frames[index];
+                if(frame.texture && frame.texture.getId() === atlasKey){
+                    frame._resetDynamicAtlasFrame();
+                }
+            }
+            atlas.destroy();
+            delete this.atlases[atlasKey];
+            //解除关系
+            let relations = Object.values(this.atlaseTexts)
+            for (let index = 0; index < relations.length; index++) {
+                const relation = relations[index];
+                array.fastRemove(relation,atlasKey);
+            }
+        }
+
     }
 
     //根据当前的合批顺序 优化动态合批
@@ -119,6 +156,10 @@ export class DynamicAtlasProManager extends System{
                 return atlas.width * atlas.height
             }))
             atlas = this.atlases[atlases[index]];
+            if(atlas.textures.length > info.uuids.length + this.excess){
+                //如果多的太多则重新创建
+                atlas = this.createAtlas(info);
+            }
         }else{
             atlas = this.createAtlas(info);
         }
@@ -155,21 +196,43 @@ export class DynamicAtlasProManager extends System{
         // info.commits.forEach(commit => {
         //     commit.render
         // })
-        console.log("relatedAtlas",this.atlases);
+        // console.log("relatedAtlas",this.atlases);
 
         for (let index = 0; index < info.commits.length; index++) {
             const commit = info.commits[index];
-            let atlasInfo = atlas.textureInfos[commit.frame!.texture.uuid]
-            if(atlasInfo){
+            let atlasInfo;
+            if(!(commit.frame?.original)){
+
+                atlasInfo = atlas.getInfo(commit.frame as SpriteFrame,commit.frame!.texture)
                 let rx = commit.frame!.rect.x;
                 let ry = commit.frame!.rect.y;
-                console.log(commit.frame!.rect);
                 commit.frame?._setDynamicAtlasFrame({
                     x:rx+atlasInfo.x,
                     y:ry+atlasInfo.y,
                     texture:atlasInfo.texture
                 });
+
+            }else{
+
+                atlasInfo = atlas.getInfo(commit.frame as SpriteFrame,commit.frame!.original._texture)
+                if(commit.frame!.original._texture !== atlas.getTexture()){
+                    commit.frame?._resetDynamicAtlasFrame();
+                    //如果不是最新的atlas则关联最新的
+                    let rx = commit.frame!.rect.x;
+                    let ry = commit.frame!.rect.y;
+                    commit.frame?._setDynamicAtlasFrame({
+                        x:rx+atlasInfo.x,
+                        y:ry+atlasInfo.y,
+                        texture:atlasInfo.texture
+                    });
+                }
+
             }
+
+            (commit.render as any)._assembler.updateUVs(commit.render);
+            commit.render!.renderData?.updateTexture(commit.frame as SpriteFrame);
+            commit.render!.renderData?.updateHash();
+
         }
 
     }
