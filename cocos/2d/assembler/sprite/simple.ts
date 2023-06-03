@@ -52,6 +52,11 @@ export const simple: IAssembler = {
     },
 
     updateRenderData (sprite: Sprite) {
+
+        // if((sprite as any)._spriteFrame){
+        //     (sprite as any)._spriteFrame = (sprite as any).spriteFrame.clone();
+        // }
+
         const frame = sprite.spriteFrame;
 
         dynamicAtlasManager.packToDynamicAtlas(sprite, frame);

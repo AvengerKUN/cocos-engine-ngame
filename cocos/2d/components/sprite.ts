@@ -487,6 +487,13 @@ export class Sprite extends UIRenderer {
         }
     }
 
+    onLoad(){
+        super.onLoad();
+        if(this._spriteFrame){
+            this._spriteFrame = this._spriteFrame.clone();
+        }
+    }
+
     public onEnable () {
         super.onEnable();
 

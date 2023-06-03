@@ -1,7 +1,7 @@
 import { TextureBase } from '../../../asset/assets/texture-base';
 import { System, size } from '../../../core';
 import { director } from '../../../game';
-import { SpriteFrame } from '../../assets';
+import { BitmapFont, SpriteFrame } from '../../assets';
 import { UIRenderer } from '../../framework';
 import { BaseRenderData } from '../../renderer/render-data';
 import { Node } from '../../../scene-graph';
@@ -50,19 +50,34 @@ export class DynamicAtlasProManager extends System{
     //记入需要删除的Atlas
     deletes:string[] = [];
 
+    //是否开启DynamicAtlasProManager
+    enabled:boolean = false;
+
     //是否清理
-    _isClear:boolean = true;
+    _isClear:boolean = false;
+
+    //是否优化
+    _isOptimize:boolean = false;
 
     //多出数量
     excess:number = 2;
 
     //提交渲染顺序
     commit(render: UIRenderer, renderData: BaseRenderData|null, frame: SpriteFrame, assembler: any, transform: Node | null){
+        if(!this.enabled) return;
 
         //如果不是ui-sprite-material材质 则不可以合批
         if(render.customMaterial != this.material){
             this.block();
             return;
+        }
+
+        //如果是艺术字打断
+        if(render instanceof Label){
+            if(render.font instanceof BitmapFont){
+                this.block();
+                return;
+            }
         }
 
         let texture = frame.original?._texture || frame.texture;
@@ -85,17 +100,23 @@ export class DynamicAtlasProManager extends System{
         this.commits.push(new DynamicAtlasCommit());
     }
 
-    postUpdate(dt: number): void {
-        console.log(this.commits,this.textures,this.atlases);
-        this.optimize();
-        this._isClear && (this._clear())
+    update(dt: number): void {
+        if(!this.enabled) return;
+        this._isOptimize && this._optimize();
+        this._isClear && this._clear();
         this.commits = [new DynamicAtlasCommit()];
         this.textures = {};
         this.deletes = Object.keys(this.atlases);
+        this._isClear = false;
+        this._isOptimize = false;
     }
 
     public clear(){
         this._isClear = true;
+    }
+
+    public optimize(){
+        this._isOptimize = true;
     }
 
     //清除不需要的Atlas
@@ -103,7 +124,7 @@ export class DynamicAtlasProManager extends System{
 
         for (let index = 0; index < this.deletes.length; index++) {
             const atlasKey = this.deletes[index];
-            console.log("清理",atlasKey);
+            // console.log("清理",atlasKey);
             let atlas = this.atlases[atlasKey];
             //重置用过atlas的SpriteFrame
             for (let index = 0; index < atlas.frames.length; index++) {
@@ -125,7 +146,9 @@ export class DynamicAtlasProManager extends System{
     }
 
     //根据当前的合批顺序 优化动态合批
-    optimize(){
+    _optimize(){
+
+        // console.log(this.commits,this.textures,this.atlases);
 
         for (let index = 0; index < this.commits.length; index++) {
 
@@ -201,37 +224,50 @@ export class DynamicAtlasProManager extends System{
         for (let index = 0; index < info.commits.length; index++) {
             const commit = info.commits[index];
             let atlasInfo;
+            let isDynamic = false;
             if(!(commit.frame?.original)){
 
                 atlasInfo = atlas.getInfo(commit.frame as SpriteFrame,commit.frame!.texture)
+
                 let rx = commit.frame!.rect.x;
                 let ry = commit.frame!.rect.y;
+
                 commit.frame?._setDynamicAtlasFrame({
                     x:rx+atlasInfo.x,
                     y:ry+atlasInfo.y,
                     texture:atlasInfo.texture
                 });
 
-            }else{
+                isDynamic = true;
+
+            }
+            else{
 
                 atlasInfo = atlas.getInfo(commit.frame as SpriteFrame,commit.frame!.original._texture)
                 if(commit.frame!.original._texture !== atlas.getTexture()){
+
                     commit.frame?._resetDynamicAtlasFrame();
+
                     //如果不是最新的atlas则关联最新的
                     let rx = commit.frame!.rect.x;
                     let ry = commit.frame!.rect.y;
+
                     commit.frame?._setDynamicAtlasFrame({
                         x:rx+atlasInfo.x,
                         y:ry+atlasInfo.y,
                         texture:atlasInfo.texture
                     });
+                    isDynamic = true;
+
                 }
 
             }
 
-            (commit.render as any)._assembler.updateUVs(commit.render);
-            commit.render!.renderData?.updateTexture(commit.frame as SpriteFrame);
-            commit.render!.renderData?.updateHash();
+            if(isDynamic){
+                (commit.render as any)._assembler.updateUVs(commit.render);
+                commit.render!.renderData?.updateTexture(commit.frame as SpriteFrame);
+                commit.render!.renderData?.updateHash();
+            }
 
         }
 
