@@ -11,6 +11,7 @@ import { Texture } from '../../../gfx';
 import { Label, Sprite } from '../../components';
 import AtlasPro from './AtlasPro';
 import { array } from '../../../core/utils/js';
+import { EDITOR } from 'internal:constants';
 
 //提交记录
 interface AtlasCommit{
@@ -62,9 +63,12 @@ export class DynamicAtlasProManager extends System{
     //多出数量
     excess:number = 2;
 
+    //强行渲染
+    isForce:boolean = false;
+
     //提交渲染顺序
     commit(render: UIRenderer, renderData: BaseRenderData|null, frame: SpriteFrame, assembler: any, transform: Node | null){
-        if(!this.enabled) return;
+        if(!this.enabled || EDITOR) return;
 
         //如果不是ui-sprite-material材质 则不可以合批
         if(render.customMaterial != this.material){
@@ -80,6 +84,17 @@ export class DynamicAtlasProManager extends System{
             }
         }
 
+        if(render instanceof Sprite){
+            if(!render.spriteFrame){
+                this.block();
+                return;
+            }
+            if(!render.original){
+                render._setDynamicAtlasFrame();
+                frame = render.spriteFrame;
+            }
+        }
+
         let texture = frame.original?._texture || frame.texture;
 
         this.commits[this.commits.length - 1].commits.push({
@@ -89,7 +104,7 @@ export class DynamicAtlasProManager extends System{
         });
         this.commits[this.commits.length - 1].uuids.push(texture.uuid);
         this.textures[texture.uuid] = texture as Texture2D;
-        if(!frame.original){
+        if(!frame.original || this.isForce){
             this.commits[this.commits.length - 1].isAllBatch = false;
         }
         array.fastRemove(this.deletes,frame.texture.getId())
@@ -264,9 +279,9 @@ export class DynamicAtlasProManager extends System{
             }
 
             if(isDynamic){
-                (commit.render as any)._assembler.updateUVs(commit.render);
                 commit.render!.renderData?.updateTexture(commit.frame as SpriteFrame);
                 commit.render!.renderData?.updateHash();
+                (commit.render as any)._assembler.updateUVs(commit.render);
             }
 
         }

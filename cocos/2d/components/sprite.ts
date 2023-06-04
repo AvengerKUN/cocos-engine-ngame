@@ -32,7 +32,7 @@ import { IBatcher } from '../renderer/i-batcher';
 import { UIRenderer, InstanceMaterialType } from '../framework/ui-renderer';
 import { PixelFormat } from '../../asset/assets/asset-enum';
 import { TextureBase } from '../../asset/assets/texture-base';
-import { Material, RenderTexture, Texture2D } from '../../asset/assets';
+import { Material, RenderTexture } from '../../asset/assets';
 import { NodeEventType } from '../../scene-graph/node-event';
 
 /**
@@ -201,9 +201,11 @@ export class Sprite extends UIRenderer {
         return this._spriteFrame;
     }
     set spriteFrame (value) {
-        if (this._spriteFrame === value) {
+        if (this._spriteFrame === value || this.original === value) {
             return;
         }
+
+        this._resetDynamicAtlasFrame();
 
         const lastSprite = this._spriteFrame;
         this._spriteFrame = value;
@@ -477,6 +479,8 @@ export class Sprite extends UIRenderer {
     @serializable
     protected _atlas: SpriteAtlas | null = null;
 
+    public original:SpriteFrame | null = null;
+
     public __preload () {
         this.changeMaterialForDefine();
         super.__preload();
@@ -484,13 +488,6 @@ export class Sprite extends UIRenderer {
         if (EDITOR) {
             this._resized();
             this.node.on(NodeEventType.SIZE_CHANGED, this._resized, this);
-        }
-    }
-
-    onLoad(){
-        super.onLoad();
-        if(this._spriteFrame){
-            this._spriteFrame = this._spriteFrame.clone();
         }
     }
 
@@ -520,6 +517,20 @@ export class Sprite extends UIRenderer {
             this.node.off(NodeEventType.SIZE_CHANGED, this._resized, this);
         }
         super.onDestroy();
+    }
+
+    public _setDynamicAtlasFrame(){
+        if(this.original) return;
+        if(this._spriteFrame){
+            this.original = this._spriteFrame;
+            this._spriteFrame = this.original.clone();
+        }
+    }
+
+    public _resetDynamicAtlasFrame(){
+        if(!this.original) return;
+        this._spriteFrame = this.original;
+        this.original = null;
     }
 
     /**
