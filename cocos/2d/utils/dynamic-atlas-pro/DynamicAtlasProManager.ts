@@ -255,18 +255,16 @@ export class DynamicAtlasProManager extends System{
 
                 isDynamic = true;
 
-            }
-            else{
+            }else{
 
                 atlasInfo = atlas.getInfo(commit.frame as SpriteFrame,commit.frame!.original._texture)
-                if(commit.frame!.original._texture !== atlas.getTexture()){
+
+                if((commit.frame.texture) != atlas.getTexture()){
 
                     commit.frame?._resetDynamicAtlasFrame();
 
-                    //如果不是最新的atlas则关联最新的
                     let rx = commit.frame!.rect.x;
                     let ry = commit.frame!.rect.y;
-
                     commit.frame?._setDynamicAtlasFrame({
                         x:rx+atlasInfo.x,
                         y:ry+atlasInfo.y,
@@ -279,9 +277,28 @@ export class DynamicAtlasProManager extends System{
             }
 
             if(isDynamic){
-                commit.render!.renderData?.updateTexture(commit.frame as SpriteFrame);
-                commit.render!.renderData?.updateHash();
+                commit.render!.renderData?.updateTextureHash(commit.frame as SpriteFrame);
+                commit.render!.renderData?.updateHashValue();
                 (commit.render as any)._assembler.updateUVs(commit.render);
+
+                // if(commit.render instanceof Sprite){
+                //     if((commit.render as any)._assembler.updateFillRenderData){
+                //         (commit.render as any)._assembler.updateUVs(commit.render);
+                //         (commit.render as any)._assembler.updateFillRenderData(commit.render.renderData,commit.render);
+                //     }else{
+                //         (commit.render as any)._assembler.updateUVs(commit.render);
+                //     }
+                // }else{
+                //     (commit.render as any)._assembler.updateUVs(commit.render);
+                // }
+                // if(commit.render instanceof Sprite){
+
+                //     commit.render.renderData!.vertDirty = true;
+                //     if((commit.render as any)._assembler.updateFillRenderData){
+                //         (commit.render as any)._assembler.updateFillRenderData(commit.render.renderData,commit.render);
+                //     }
+                //     // commit.render.markForUpdateRenderData();
+                // }
             }
 
         }

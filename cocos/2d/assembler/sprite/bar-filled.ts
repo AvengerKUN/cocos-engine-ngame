@@ -46,32 +46,38 @@ export const barFilled: IAssembler = {
 
         const renderData = sprite.renderData;
         if (renderData && frame) {
-            const vertDirty = renderData.vertDirty;
-
-            if (!vertDirty) {
-                return;
-            }
-
-            let fillStart = sprite.fillStart;
-            let fillRange = sprite.fillRange;
-            if (fillRange < 0) {
-                fillStart += fillRange;
-                fillRange = -fillRange;
-            }
-            fillRange = fillStart + fillRange;
-            fillStart = fillStart > 1.0 ? 1.0 : fillStart;
-            fillStart = fillStart < 0.0 ? 0.0 : fillStart;
-            fillRange = fillRange > 1.0 ? 1.0 : fillRange;
-            fillRange = fillRange < 0.0 ? 0.0 : fillRange;
-            fillRange -= fillStart;
-            fillRange = fillRange < 0 ? 0 : fillRange;
-            let fillEnd = fillStart + fillRange;
-            fillEnd = fillEnd > 1 ? 1 : fillEnd;
-
-            this.updateUVs(sprite, fillStart, fillEnd); // need Dirty
-            this.updateVertexData(sprite, fillStart, fillEnd);
+            this.updateFillRenderData(renderData,sprite);
             renderData.updateRenderData(sprite, frame);
         }
+    },
+
+    updateFillRenderData(renderData,sprite){
+        
+        const vertDirty = renderData.vertDirty;
+
+        if (!vertDirty) {
+            return;
+        }
+
+        let fillStart = sprite.fillStart;
+        let fillRange = sprite.fillRange;
+        if (fillRange < 0) {
+            fillStart += fillRange;
+            fillRange = -fillRange;
+        }
+        fillRange = fillStart + fillRange;
+        fillStart = fillStart > 1.0 ? 1.0 : fillStart;
+        fillStart = fillStart < 0.0 ? 0.0 : fillStart;
+        fillRange = fillRange > 1.0 ? 1.0 : fillRange;
+        fillRange = fillRange < 0.0 ? 0.0 : fillRange;
+        fillRange -= fillStart;
+        fillRange = fillRange < 0 ? 0 : fillRange;
+        let fillEnd = fillStart + fillRange;
+        fillEnd = fillEnd > 1 ? 1 : fillEnd;
+
+        this.updateUVs(sprite, fillStart, fillEnd); // need Dirty
+        this.updateVertexData(sprite, fillStart, fillEnd);
+
     },
 
     updateUVs (sprite: Sprite, fillStart: number, fillEnd: number) {

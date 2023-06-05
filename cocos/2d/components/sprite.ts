@@ -201,7 +201,7 @@ export class Sprite extends UIRenderer {
         return this._spriteFrame;
     }
     set spriteFrame (value) {
-        if (this._spriteFrame === value || this.original === value) {
+        if (this._spriteFrame === value || (this.original && this.original === value)) {
             return;
         }
 

@@ -441,17 +441,25 @@ export class RenderData extends BaseRenderData {
     }
 
     public updateTexture (frame: SpriteFrame | TextureBase) {
-        this.frame = frame;
-        this.textureHash = frame.getHash();
+        this.updateTextureHash(frame)
         this.textureDirty = false;
         this.hashDirty = true;
     }
 
+    public updateTextureHash(frame: SpriteFrame | TextureBase){
+        this.frame = frame;
+        this.textureHash = frame.getHash();
+    }
+
     public updateHash () {
+        this.updateHashValue();
+        this.hashDirty = false;
+    }
+
+    public updateHashValue(){
         const bid = this.chunk ? this.chunk.bufferId : -1;
         const hashString = `${bid}${this.layer} ${this.textureHash}`;
         this.dataHash = murmurhash2_32_gc(hashString, 666);
-        this.hashDirty = false;
     }
 
     public updateRenderData (comp: UIRenderer, frame: SpriteFrame | TextureBase) {
