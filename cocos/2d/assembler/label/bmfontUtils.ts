@@ -66,6 +66,7 @@ let _tailoredTopY = 0;
 let _tailoredBottomY = 0;
 let _bmfontScale = 1.0;
 let _spriteFrame: SpriteFrame|null = null;
+let _lastSpriteFrame: SpriteFrame|null = null;
 let _string = '';
 let _fontSize = 0;
 let _originFontSize = 0;
@@ -159,7 +160,7 @@ export const bmfontUtils = {
 
     _updateFontFamily (comp) {
         const fontAsset = comp.font;
-        _spriteFrame = fontAsset.spriteFrame;
+        _spriteFrame = _lastSpriteFrame || fontAsset.spriteFrame;
         _fntConfig = fontAsset.fntConfig;
         shareLabelInfo.fontAtlas = fontAsset.fontDefDictionary;
         if (!shareLabelInfo.fontAtlas) {
@@ -768,6 +769,12 @@ export const bmfontUtils = {
         _labelDimensions.height = newHeight;
         _maxLineWidth = newWidth;
     },
+
+    setSpriteFrame(frame:SpriteFrame){
+        _spriteFrame = frame;
+        _lastSpriteFrame = frame;
+    }
+
 };
 
 export default bmfontUtils;

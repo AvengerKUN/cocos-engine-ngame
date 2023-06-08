@@ -76,8 +76,18 @@ export class DynamicAtlasProManager extends System{
         //如果是艺术字打断
         if(render instanceof Label){
             if(render.font instanceof BitmapFont){
-                // this.block();
-                return;
+                if(!render.spriteFrame){
+                    // this.block();
+                    return;
+                }
+                if(!render.original){
+                    if(render._setDynamicAtlasFrame()){
+                        frame = render.spriteFrame as SpriteFrame;
+                    }else{
+                        this.block();
+                        return;
+                    }
+                }
             }
         }
 
@@ -237,6 +247,11 @@ export class DynamicAtlasProManager extends System{
             const commit = info.commits[index];
             let atlasInfo;
             let isDynamic = false;
+
+            // if((commit.render as any)._setDynamicAtlasFrame && !((commit.render as any).original)){
+            //     (commit.render as any)._setDynamicAtlasFrame();
+            // }
+
             if(!(commit.frame?.original)){
 
                 atlasInfo = atlas.getInfo(commit.frame as SpriteFrame,commit.frame!.texture)

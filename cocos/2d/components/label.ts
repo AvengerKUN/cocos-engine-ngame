@@ -689,6 +689,8 @@ export class Label extends UIRenderer {
     protected _letterTexture: LetterRenderTexture | null = null;
 
     protected _contentWidth = 0;
+    
+    public original:SpriteFrame | null = null;
 
     /**
      * @engineInternal
@@ -827,6 +829,28 @@ export class Label extends UIRenderer {
                 this.renderData!.material = this.material;
                 this._updateColor();
             }
+        }
+    }
+
+    public _setDynamicAtlasFrame(){
+        if(this.original) return false;
+        if(this._texture && this._texture instanceof SpriteFrame && this.font instanceof BitmapFont){
+            this.original = this._texture;
+            this._texture = this.original.clone();
+            // if(this._assembler){
+            //     this._assembler.setSpriteFrame(this._texture);
+            // }
+            return true;
+        }
+        return false;
+    }
+
+    public _resetDynamicAtlasFrame(){
+        if(!this.original) return;
+        this._texture = this.original;
+        this.original = null;
+        if(this._assembler){
+            this._assembler.setSpriteFrame(this._texture);
         }
     }
 
