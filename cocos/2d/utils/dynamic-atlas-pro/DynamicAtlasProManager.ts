@@ -33,9 +33,6 @@ export class DynamicAtlasProManager extends System{
 
     public static instance: DynamicAtlasProManager;
 
-    //目前只有ui-sprite-material才可以合批
-    material:Material = builtinResMgr.get(`ui-sprite-material`);
-
     //当前帧渲染合批顺序
     commits:DynamicAtlasCommit[] = [new DynamicAtlasCommit()];
 
@@ -71,7 +68,7 @@ export class DynamicAtlasProManager extends System{
         if(!this.enabled || EDITOR) return;
 
         //如果不是ui-sprite-material材质 则不可以合批
-        if(render.customMaterial != this.material){
+        if(render.getSharedMaterial(0) != builtinResMgr.get(`ui-sprite-material`)){
             this.block();
             return;
         }
@@ -79,14 +76,14 @@ export class DynamicAtlasProManager extends System{
         //如果是艺术字打断
         if(render instanceof Label){
             if(render.font instanceof BitmapFont){
-                this.block();
+                // this.block();
                 return;
             }
         }
 
         if(render instanceof Sprite){
             if(!render.spriteFrame){
-                this.block();
+                // this.block();
                 return;
             }
             if(!render.original){
@@ -117,8 +114,8 @@ export class DynamicAtlasProManager extends System{
 
     update(dt: number): void {
         if(!this.enabled) return;
-        this._isOptimize && this._optimize();
         this._isClear && this._clear();
+        this._isOptimize && this._optimize();
         this.commits = [new DynamicAtlasCommit()];
         this.textures = {};
         this.deletes = Object.keys(this.atlases);
@@ -281,24 +278,13 @@ export class DynamicAtlasProManager extends System{
                 commit.render!.renderData?.updateHashValue();
                 (commit.render as any)._assembler.updateUVs(commit.render);
 
-                // if(commit.render instanceof Sprite){
-                //     if((commit.render as any)._assembler.updateFillRenderData){
-                //         (commit.render as any)._assembler.updateUVs(commit.render);
-                //         (commit.render as any)._assembler.updateFillRenderData(commit.render.renderData,commit.render);
-                //     }else{
-                //         (commit.render as any)._assembler.updateUVs(commit.render);
-                //     }
-                // }else{
-                //     (commit.render as any)._assembler.updateUVs(commit.render);
-                // }
-                // if(commit.render instanceof Sprite){
-
-                //     commit.render.renderData!.vertDirty = true;
-                //     if((commit.render as any)._assembler.updateFillRenderData){
-                //         (commit.render as any)._assembler.updateFillRenderData(commit.render.renderData,commit.render);
-                //     }
-                //     // commit.render.markForUpdateRenderData();
-                // }
+                if(commit.render instanceof Sprite){
+                    commit.render.renderData!.vertDirty = true;
+                    if((commit.render as any)._assembler.updateFillRenderData){
+                        (commit.render as any)._assembler.updateFillRenderData(commit.render.renderData,commit.render);
+                    }
+                    // commit.render.markForUpdateRenderData();
+                }
             }
 
         }
