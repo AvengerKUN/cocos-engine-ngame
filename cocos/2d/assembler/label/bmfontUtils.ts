@@ -23,7 +23,7 @@
 */
 
 import { JSB } from 'internal:constants';
-import { IConfig, FontLetterDefinition, FontAtlas } from '../../assets/bitmap-font';
+import { IConfig, FontLetterDefinition, FontAtlas, BitmapFont } from '../../assets/bitmap-font';
 import { SpriteFrame } from '../../assets/sprite-frame';
 import { isUnicodeCJK, isUnicodeSpace } from '../../utils/text-utils';
 import { Rect, Size, Vec2 } from '../../../core';
@@ -66,7 +66,6 @@ let _tailoredTopY = 0;
 let _tailoredBottomY = 0;
 let _bmfontScale = 1.0;
 let _spriteFrame: SpriteFrame|null = null;
-let _lastSpriteFrame: SpriteFrame|null = null;
 let _string = '';
 let _fontSize = 0;
 let _originFontSize = 0;
@@ -92,6 +91,15 @@ export const bmfontUtils = {
         if (comp.renderData.vertDirty) {
             _comp = comp;
             _uiTrans = _comp.node._uiProps.uiTransformComp!;
+            const font = comp.font;
+
+            let lastFont;
+
+            if (font instanceof BitmapFont && font.spriteFrame && comp.spriteFrame instanceof SpriteFrame) {
+                lastFont = font.spriteFrame;
+                font.spriteFrame = comp.spriteFrame;
+            }
+
             this._updateFontFamily(comp);
             this._updateProperties(comp);
             this._updateLabelInfo(comp);
@@ -107,6 +115,10 @@ export const bmfontUtils = {
             // _comp.markForUpdateRenderData(false);
 
             _comp = null;
+
+            if (font instanceof BitmapFont && lastFont) {
+                font.spriteFrame = lastFont;
+            }
 
             this._resetProperties();
         }
@@ -160,7 +172,7 @@ export const bmfontUtils = {
 
     _updateFontFamily (comp) {
         const fontAsset = comp.font;
-        _spriteFrame = _lastSpriteFrame || fontAsset.spriteFrame;
+        _spriteFrame = fontAsset.spriteFrame;
         _fntConfig = fontAsset.fntConfig;
         shareLabelInfo.fontAtlas = fontAsset.fontDefDictionary;
         if (!shareLabelInfo.fontAtlas) {
@@ -769,11 +781,6 @@ export const bmfontUtils = {
         _labelDimensions.height = newHeight;
         _maxLineWidth = newWidth;
     },
-
-    setSpriteFrame(frame:SpriteFrame){
-        _spriteFrame = frame;
-        _lastSpriteFrame = frame;
-    }
 
 };
 

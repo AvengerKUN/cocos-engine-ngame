@@ -12,6 +12,7 @@ import { Label, Sprite } from '../../components';
 import AtlasPro from './AtlasPro';
 import { array } from '../../../core/utils/js';
 import { EDITOR } from 'internal:constants';
+import { WebGLDeviceManager } from '../../../gfx/webgl/webgl-define';
 
 //提交记录
 interface AtlasCommit{
@@ -68,7 +69,7 @@ export class DynamicAtlasProManager extends System{
         if(!this.enabled || EDITOR) return;
 
         //如果不是ui-sprite-material材质 则不可以合批
-        if(render.getSharedMaterial(0) != builtinResMgr.get(`ui-sprite-material`)){
+        if(render.customMaterial || render.getSharedMaterial(0) != builtinResMgr.get(`ui-sprite-material`)){
             this.block();
             return;
         }
@@ -80,14 +81,15 @@ export class DynamicAtlasProManager extends System{
                     // this.block();
                     return;
                 }
-                if(!render.original){
-                    if(render._setDynamicAtlasFrame()){
-                        frame = render.spriteFrame as SpriteFrame;
-                    }else{
-                        this.block();
-                        return;
-                    }
-                }
+                // if(!render.original){
+                //     if(render._setDynamicAtlasFrame()){
+                //         frame = render.spriteFrame as SpriteFrame;
+                //         // commit.render.markForUpdateRenderData();
+                //     }else{
+                //         this.block();
+                //         return;
+                //     }
+                // }
             }
         }
 
@@ -217,6 +219,15 @@ export class DynamicAtlasProManager extends System{
     createAtlas(info:DynamicAtlasCommit){
         let textures = this.getTextures(...info.uuids);
         let size = AtlasPro.compute(textures);
+
+        const maxSize = Math.max(size.x,size.y);
+        if(WebGLDeviceManager.instance.capabilities.maxTextureSize <= maxSize){
+            //超过合图大小
+            //将大图过滤
+            textures = AtlasPro.adaption(textures) as Texture2D[];
+            size = AtlasPro.compute(textures);
+        }
+
         let atlas = new AtlasPro(size.x,size.y);
         
         //合图
@@ -256,37 +267,47 @@ export class DynamicAtlasProManager extends System{
 
                 atlasInfo = atlas.getInfo(commit.frame as SpriteFrame,commit.frame!.texture)
 
-                let rx = commit.frame!.rect.x;
-                let ry = commit.frame!.rect.y;
-
-                commit.frame?._setDynamicAtlasFrame({
-                    x:rx+atlasInfo.x,
-                    y:ry+atlasInfo.y,
-                    texture:atlasInfo.texture
-                });
-
-                isDynamic = true;
-
-            }else{
-
-                atlasInfo = atlas.getInfo(commit.frame as SpriteFrame,commit.frame!.original._texture)
-
-                if((commit.frame.texture) != atlas.getTexture()){
-
-                    commit.frame?._resetDynamicAtlasFrame();
-
+                if(atlasInfo){
                     let rx = commit.frame!.rect.x;
                     let ry = commit.frame!.rect.y;
+    
                     commit.frame?._setDynamicAtlasFrame({
                         x:rx+atlasInfo.x,
                         y:ry+atlasInfo.y,
                         texture:atlasInfo.texture
                     });
+    
                     isDynamic = true;
+                }
 
+            }else{
+
+                atlasInfo = atlas.getInfo(commit.frame as SpriteFrame,commit.frame!.original._texture)
+
+                if(atlasInfo){
+                    if((commit.frame.texture) != atlas.getTexture()){
+    
+                        commit.frame?._resetDynamicAtlasFrame();
+    
+                        let rx = commit.frame!.rect.x;
+                        let ry = commit.frame!.rect.y;
+                        commit.frame?._setDynamicAtlasFrame({
+                            x:rx+atlasInfo.x,
+                            y:ry+atlasInfo.y,
+                            texture:atlasInfo.texture
+                        });
+                        isDynamic = true;
+    
+                    }
                 }
 
             }
+
+            // if(commit.render instanceof Label){
+            //     if(commit.render.font instanceof BitmapFont){
+            //         continue;
+            //     }
+            // }
 
             if(isDynamic){
                 commit.render!.renderData?.updateTextureHash(commit.frame as SpriteFrame);
@@ -297,6 +318,17 @@ export class DynamicAtlasProManager extends System{
                     commit.render.renderData!.vertDirty = true;
                     if((commit.render as any)._assembler.updateFillRenderData){
                         (commit.render as any)._assembler.updateFillRenderData(commit.render.renderData,commit.render);
+                    }
+                    // commit.render.markForUpdateRenderData();
+                }
+                if(commit.render instanceof Label){
+                    if(commit.render.font instanceof BitmapFont){
+                        if (commit.render.renderData) {
+                            commit.render.renderData.vertDirty = true;
+                        };
+                        if((commit.render as any)._assembler.updateRenderData){
+                            (commit.render as any)._assembler.updateRenderData(commit.render);
+                        }
                     }
                     // commit.render.markForUpdateRenderData();
                 }

@@ -837,9 +837,9 @@ export class Label extends UIRenderer {
         if(this._texture && this._texture instanceof SpriteFrame && this.font instanceof BitmapFont){
             this.original = this._texture;
             this._texture = this.original.clone();
-            // if(this._assembler){
-            //     this._assembler.setSpriteFrame(this._texture);
-            // }
+            if(this._assembler){
+                this._assembler.setSpriteFrame(this._texture);
+            }
             return true;
         }
         return false;
@@ -857,8 +857,13 @@ export class Label extends UIRenderer {
     protected _applyFontTexture () {
         this.markForUpdateRenderData();
         const font = this._font;
+
+        if(this.original){
+            this._resetDynamicAtlasFrame();
+        }
+
         if (font instanceof BitmapFont) {
-            const spriteFrame = font.spriteFrame;
+            const spriteFrame = font.spriteFrame?.clone();
             if (spriteFrame && spriteFrame.texture) {
                 this._texture = spriteFrame;
                 if (this.renderData) {

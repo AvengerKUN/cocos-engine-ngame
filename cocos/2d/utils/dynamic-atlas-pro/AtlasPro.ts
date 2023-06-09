@@ -5,6 +5,7 @@ import { TextureBase } from '../../../asset/assets/texture-base';
 import { Size, cclegacy, size, v2 } from '../../../core';
 import { Atlas } from '../dynamic-atlas/atlas';
 import { SpriteFrame } from '../../assets/sprite-frame';
+import { WebGLDeviceManager } from '../../../gfx/webgl/webgl-define';
 
 const space = 2;
 
@@ -118,6 +119,35 @@ export default class AtlasPro extends Atlas{
         }
 
         return v2(x,y);
+
+    }
+
+    /**
+     * 返回自适应合图
+     */
+    static adaption(textures:TextureBase[]){
+
+        //排序
+        textures = textures.sort((a,b) => Math.max(a.width,a.height) - Math.max(a.width,a.height));
+        let x = space;
+        let y = space;
+
+        let maxTextureSize = Math.floor(WebGLDeviceManager.instance.capabilities.maxTextureSize * 0.9);
+
+        let adaption:TextureBase[] = [];
+
+        for (let index = 0; index < textures.length; index++) {
+            let texture = textures[index];
+            y = Math.max(y,texture.height + space + space)
+            x += (texture.width + space);
+            if(Math.max(y,x) < maxTextureSize){
+                adaption.push(texture);
+            }else{
+                break;
+            }
+        }
+
+        return adaption;
 
     }
     
