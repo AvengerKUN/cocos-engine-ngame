@@ -64,6 +64,9 @@ export class DynamicAtlasProManager extends System{
     //强行渲染
     isForce:boolean = false;
 
+    //可优化数量
+    optimizeSize:number = 0;
+
     //提交渲染顺序
     commit(render: UIRenderer, renderData: BaseRenderData|null, frame: SpriteFrame, assembler: any, transform: Node | null){
         if(!this.enabled || EDITOR) return;
@@ -114,6 +117,7 @@ export class DynamicAtlasProManager extends System{
         this.commits[this.commits.length - 1].uuids.push(texture.uuid);
         this.textures[texture.uuid] = texture as Texture2D;
         if(!frame.original || this.isForce){
+            this.optimizeSize++;
             this.commits[this.commits.length - 1].isAllBatch = false;
         }
         array.fastRemove(this.deletes,frame.texture.getId())
@@ -133,6 +137,7 @@ export class DynamicAtlasProManager extends System{
         this.deletes = Object.keys(this.atlases);
         this._isClear = false;
         this._isOptimize = false;
+        this.optimizeSize = 0;
     }
 
     public clear(){
