@@ -52,8 +52,9 @@ export class DynamicAtlasProManager extends System{
     //是否开启DynamicAtlasProManager
     enabled:boolean = false;
 
-    //是否清理
-    _isClear:boolean = false;
+    //是否开始
+    isStart:boolean = false;
+    isStartCommit:boolean = false;
 
     //是否优化
     _isOptimize:boolean = false;
@@ -64,12 +65,10 @@ export class DynamicAtlasProManager extends System{
     //强行渲染
     isForce:boolean = false;
 
-    //可优化数量
-    optimizeSize:number = 0;
-
     //提交渲染顺序
     commit(render: UIRenderer, renderData: BaseRenderData|null, frame: SpriteFrame, assembler: any, transform: Node | null){
         if(!this.enabled || EDITOR) return;
+        if(!this.isStartCommit) return;
 
         //如果不是ui-sprite-material材质 则不可以合批
         if(render.customMaterial || render.getSharedMaterial(0) != builtinResMgr.get(`ui-sprite-material`)){
@@ -117,7 +116,6 @@ export class DynamicAtlasProManager extends System{
         this.commits[this.commits.length - 1].uuids.push(texture.uuid);
         this.textures[texture.uuid] = texture as Texture2D;
         if(!frame.original || this.isForce){
-            this.optimizeSize++;
             this.commits[this.commits.length - 1].isAllBatch = false;
         }
         array.fastRemove(this.deletes,frame.texture.getId())
@@ -129,20 +127,46 @@ export class DynamicAtlasProManager extends System{
     }
 
     update(dt: number): void {
+
         if(!this.enabled) return;
-        this._isClear && this._clear();
-        this._isOptimize && this._optimize();
-        this.commits = [new DynamicAtlasCommit()];
-        this.textures = {};
-        this.deletes = Object.keys(this.atlases);
-        this._isClear = false;
-        this._isOptimize = false;
-        this.optimizeSize = 0;
+
+        this.isStartCommit = false;
+
+        //优化
+        if(this.isStart){
+            //每帧只优化一次
+            if(!this._optimizeOne()){
+                //清除
+                this._clear();
+                this._isOptimize = false;
+                this.isStart = false;
+                //重置数据
+                this.commits = [new DynamicAtlasCommit()];
+                this.textures = {};
+                this.deletes = Object.keys(this.atlases);
+            }
+        }else if(this._isOptimize){
+            //重置数据
+            this.commits = [new DynamicAtlasCommit()];
+            this.textures = {};
+            this.deletes = Object.keys(this.atlases);
+            //开始优化
+            this.isStart = true;
+            this.isStartCommit = true;
+        }
+
+        // this._isClear && this._clear();
+        // this._isOptimize && this._optimize();
+        // this.commits = [new DynamicAtlasCommit()];
+        // this.textures = {};
+        // this.deletes = Object.keys(this.atlases);
+        // this._isClear = false;
+        // this._isOptimize = false;
     }
 
-    public clear(){
-        this._isClear = true;
-    }
+    // public clear(){
+    //     this._isClear = true;
+    // }
 
     public optimize(){
         this._isOptimize = true;
@@ -174,10 +198,29 @@ export class DynamicAtlasProManager extends System{
 
     }
 
+    //合图一次
+    _optimizeOne(){
+        
+        for (let index = 0; index < this.commits.length; index++) {
+
+            const info = this.commits[index];
+            const commits = this.commits[index].commits;
+            if(info.isAllBatch) continue;
+            if(commits.length === 0) continue;
+            //进行合图
+            this.dynamicAtlas(info);
+            //表示合图完成
+            info.isAllBatch = true;
+            return true;
+
+        }
+
+        return false;
+
+    }
+
     //根据当前的合批顺序 优化动态合批
     _optimize(){
-
-        // console.log(this.commits,this.textures,this.atlases);
 
         for (let index = 0; index < this.commits.length; index++) {
 
@@ -222,11 +265,11 @@ export class DynamicAtlasProManager extends System{
 
     //根据DynamicAtlasCommit 创建合图
     createAtlas(info:DynamicAtlasCommit){
-        let textures = this.getTextures(...info.uuids);
+        let textures = this.getTextures(...info.uuids).filter(texture => texture.isValid);
         let size = AtlasPro.compute(textures);
 
         const maxSize = Math.max(size.x,size.y);
-        if(WebGLDeviceManager.instance.capabilities.maxTextureSize <= maxSize){
+        if((WebGLDeviceManager.instance || {capabilities:{maxTextureSize:1000}}).capabilities.maxTextureSize <= maxSize){
             //超过合图大小
             //将大图过滤
             textures = AtlasPro.adaption(textures) as Texture2D[];
@@ -308,6 +351,8 @@ export class DynamicAtlasProManager extends System{
 
             }
 
+            array.fastRemove(this.deletes,commit.frame!.texture.getId())
+
             // if(commit.render instanceof Label){
             //     if(commit.render.font instanceof BitmapFont){
             //         continue;
@@ -315,17 +360,29 @@ export class DynamicAtlasProManager extends System{
             // }
 
             if(isDynamic){
+
+                if(!(commit.render?.isValid)) continue;
+
+                if(!((commit.render as any)._assembler) || !(commit.render!.renderData)) return;
+                
                 commit.render!.renderData?.updateTextureHash(commit.frame as SpriteFrame);
                 commit.render!.renderData?.updateHashValue();
                 (commit.render as any)._assembler.updateUVs(commit.render);
+
+                // commit.render!.renderData?.updateTextureHash(commit.frame as SpriteFrame);
+                // commit.render!.renderData?.updateHashValue();
+                // (commit.render as any)._assembler.updateUVs(commit.render);
 
                 if(commit.render instanceof Sprite){
                     commit.render.renderData!.vertDirty = true;
                     if((commit.render as any)._assembler.updateFillRenderData){
                         (commit.render as any)._assembler.updateFillRenderData(commit.render.renderData,commit.render);
+                    }else if((commit.render as any)._assembler.updateVertexData){
+                        (commit.render as any)._assembler.updateVertexData(commit.render);
                     }
-                    // commit.render.markForUpdateRenderData();
+                    commit.render.renderData!.vertDirty = false;
                 }
+
                 if(commit.render instanceof Label){
                     if(commit.render.font instanceof BitmapFont){
                         if (commit.render.renderData) {
@@ -334,9 +391,13 @@ export class DynamicAtlasProManager extends System{
                         if((commit.render as any)._assembler.updateRenderData){
                             (commit.render as any)._assembler.updateRenderData(commit.render);
                         }
+                        if (commit.render.renderData) {
+                            commit.render.renderData.vertDirty = false;
+                        };
                     }
                     // commit.render.markForUpdateRenderData();
                 }
+                
             }
 
         }
